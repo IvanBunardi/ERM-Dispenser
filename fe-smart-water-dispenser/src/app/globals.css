@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2b63d4;
+  --color-primary-700: #2352b8;
+  --color-primary-800: #1b3a8a;
+  --color-primary-900: #0f2557;
+  --color-eco-100: #dcfce7;
+  --color-eco-400: #6ec148;
+  --color-eco-500: #5ba83a;
+  --color-eco-600: #4a8f28;
+  --color-eco-700: #3a7520;
+  --color-status-full: #22c55e;
+  --color-status-partial: #f59e0b;
+  --color-status-unavailable: #ef4444;
+  --font-sans: var(--font-inter);
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+}
+
+html { font-family: var(--font-inter), 'Inter', sans-serif; }
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+.leaflet-container { z-index: 0; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes scanLine {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(240px); opacity: 0.5; }
+}
+.scan-line { animation: scanLine 2s ease-in-out infinite alternate; }
+
+@keyframes bracketPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.bracket-pulse { animation: bracketPulse 2s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -468px 0; }
+  100% { background-position: 468px 0; }
+}
+.skeleton {
+  background: linear-gradient(to right, #f1f5f9 8%, #e2e8f0 18%, #f1f5f9 33%);
+  background-size: 800px 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
