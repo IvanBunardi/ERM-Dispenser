@@ -9,11 +9,13 @@ export default function ScanPage() {
   const router = useRouter();
 
   // ── Shared refs ──
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const mobileVideoRef = useRef<HTMLVideoElement>(null);
+  const desktopVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const facingModeRef = useRef<'environment' | 'user'>('environment');
 
   // ── State ──
   const [status, setStatus] = useState<CameraStatus>('idle');
@@ -27,6 +29,7 @@ export default function ScanPage() {
   // ── Start camera ──
   const startCamera = useCallback(async (facingMode: 'environment' | 'user' = 'environment') => {
     setStatus('requesting');
+    facingModeRef.current = facingMode;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus('unsupported');
@@ -37,9 +40,12 @@ export default function ScanPage() {
         audio: false,
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+      // Assign stream to whichever video elements exist
+      for (const ref of [mobileVideoRef, desktopVideoRef]) {
+        if (ref.current) {
+          ref.current.srcObject = stream;
+          await ref.current.play().catch(() => {});
+        }
       }
       // Check torch
       const track = stream.getVideoTracks()[0];
@@ -76,8 +82,9 @@ export default function ScanPage() {
     let running = true;
 
     const loop = async () => {
-      if (!running || !videoRef.current || !canvasRef.current) return;
-      const video = videoRef.current;
+      const videoEl = mobileVideoRef.current ?? desktopVideoRef.current;
+      if (!running || !videoEl || !canvasRef.current) return;
+      const video = videoEl;
       const canvas = canvasRef.current;
       if (video.readyState < 2) { rafRef.current = requestAnimationFrame(loop); return; }
 
@@ -168,12 +175,15 @@ export default function ScanPage() {
 
         {/* Camera video feed */}
         <video
-          ref={videoRef}
+          ref={mobileVideoRef}
           muted
           playsInline
           autoPlay
           className="absolute inset-0 w-full h-full object-cover"
-          style={{ display: status === 'active' ? 'block' : 'none' }}
+          style={{
+            display: status === 'active' ? 'block' : 'none',
+            transform: facingModeRef.current === 'user' ? 'scaleX(-1)' : 'none',
+          }}
         />
         <canvas ref={canvasRef} className="hidden" />
 
@@ -318,7 +328,7 @@ export default function ScanPage() {
 
             {desktopTab === 'webcam' ? (
               <DesktopCamera
-                videoRef={videoRef}
+                videoRef={desktopVideoRef}
                 canvasRef={canvasRef}
                 status={status}
                 detected={detected}
@@ -387,7 +397,10 @@ function DesktopCamera({
           ref={videoRef}
           muted playsInline autoPlay
           className="w-full h-full object-cover"
-          style={{ display: status === 'active' ? 'block' : 'none' }}
+          style={{
+            display: status === 'active' ? 'block' : 'none',
+            transform: 'scaleX(-1)',
+          }}
         />
         <canvas ref={canvasRef} className="hidden" />
 

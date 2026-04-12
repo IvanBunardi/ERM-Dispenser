@@ -3,7 +3,7 @@ import { Waves, Gem, Trophy } from 'lucide-react';
 import CircularProgress from '@/components/stats/CircularProgress';
 import { useCountUp } from '@/hooks/useCountUp';
 import { useAppStore, LEADERBOARD } from '@/store/appStore';
-import { EcoFlowLogo } from '@/components/layout/SidebarNav';
+import Image from 'next/image';
 
 export default function StatsPage() {
   const guest = useAppStore((s) => s.guest);
@@ -16,7 +16,7 @@ export default function StatsPage() {
 
         {/* Header */}
         <div className="flex flex-col items-center mb-6 md:mb-8">
-          <EcoFlowLogo size={48} />
+          <Image src="/logo.png" alt="Eco-Flow" width={48} height={48} style={{ height: 'auto' }} />
           <p className="text-slate-500 text-sm mt-2 font-medium">Your environmental impact</p>
         </div>
 

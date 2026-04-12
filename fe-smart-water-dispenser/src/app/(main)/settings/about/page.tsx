@@ -1,7 +1,7 @@
 'use client';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { EcoFlowLogo } from '@/components/layout/SidebarNav';
+import Image from 'next/image';
 
 export default function AboutPage() {
   const router = useRouter();
@@ -15,7 +15,7 @@ export default function AboutPage() {
         <div className="w-9" />
       </div>
       <div className="max-w-md mx-auto px-4 py-8 flex flex-col items-center text-center">
-        <EcoFlowLogo size={72} />
+        <Image src="/logo.png" alt="Eco-Flow" width={72} height={72} style={{ height: 'auto' }} />
         <h2 className="text-2xl font-extrabold text-primary-800 mt-4">Eco-Flow</h2>
         <p className="text-slate-500 text-sm mt-1">Pure Hydration, Zero Waste</p>
         <p className="text-xs text-slate-400 mt-1">Version 1.0.0</p>

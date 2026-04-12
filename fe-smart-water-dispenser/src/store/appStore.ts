@@ -143,8 +143,8 @@ export const MOCK_STATIONS: Station[] = [
     capacity: 92,
     status: 'available',
     imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=120&h=120&fit=crop',
-    lat: -6.3010,
-    lng: 106.6535,
+    lat: -6.3003,
+    lng: 106.6395,
     isVerified: true,
   },
   {
@@ -155,8 +155,8 @@ export const MOCK_STATIONS: Station[] = [
     capacity: 0,
     status: 'unavailable',
     imageUrl: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?w=120&h=120&fit=crop',
-    lat: -6.3005,
-    lng: 106.6525,
+    lat: -6.3008,
+    lng: 106.6392,
     isVerified: true,
   },
   {
@@ -167,8 +167,8 @@ export const MOCK_STATIONS: Station[] = [
     capacity: 50,
     status: 'partial',
     imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=120&h=120&fit=crop',
-    lat: -6.3015,
-    lng: 106.6545,
+    lat: -6.3013,
+    lng: 106.6400,
     isVerified: false,
   },
   {
@@ -179,8 +179,8 @@ export const MOCK_STATIONS: Station[] = [
     capacity: 78,
     status: 'available',
     imageUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=120&h=120&fit=crop',
-    lat: -6.2998,
-    lng: 106.6510,
+    lat: -6.3010,
+    lng: 106.6404,
     isVerified: true,
   },
 ];

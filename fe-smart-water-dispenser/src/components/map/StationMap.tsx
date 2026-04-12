@@ -30,7 +30,7 @@ export default function StationMap({ stations, selectedId, onSelect }: Props) {
       L.Marker.prototype.options.icon = DefaultIcon;
 
       const map = L.map(mapRef.current!, {
-        center: [-6.3008, 106.6530],
+        center: [-6.300735, 106.639770],
         zoom: 17,
         zoomControl: false,
         attributionControl: false,

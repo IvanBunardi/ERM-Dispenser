@@ -1,8 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { useAppStore } from '@/store/appStore';
-import { EcoFlowLogo } from '@/components/layout/SidebarNav';
 
 const STEPS = [
   { pct: 20, label: 'Connecting to network...' },
@@ -51,7 +51,7 @@ export default function SplashPage() {
         {/* Logo */}
         <div className="mb-10" style={{ animationDelay: '0ms' }}>
           <div className={`transition-all duration-600 ${visible ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}`}>
-            <EcoFlowLogo size={120} />
+            <Image src="/logo.png" alt="Eco-Flow Logo" width={120} height={120} priority style={{ height: 'auto' }} />
           </div>
         </div>
 

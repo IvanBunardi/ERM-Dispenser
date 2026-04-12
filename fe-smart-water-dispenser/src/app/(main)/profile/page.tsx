@@ -54,9 +54,9 @@ export default function ProfilePage() {
 
         {/* Header (mobile only) */}
         <div className="flex items-center justify-between py-4 md:py-6">
-          <h1 className="text-lg font-bold text-slate-800 md:text-xl">Profile</h1>
+          <h1 className="text-lg font-bold text-primary-800 md:text-xl">Profile</h1>
           <Link href="/settings" className="p-2 rounded-full hover:bg-white/60 transition-colors">
-            <Settings size={20} className="text-slate-600" />
+            <Settings size={20} className="text-primary-600" />
           </Link>
         </div>
 
@@ -165,7 +165,7 @@ function HistoryItem({ item }: { item: RefillHistory }) {
         <p className="text-xs text-slate-400">{item.waterType}</p>
       </div>
       <div className="text-right flex-shrink-0">
-        <p className="text-sm font-bold text-slate-700">
+        <p className="text-sm font-bold text-red-500">
           -{item.currency} {item.amount.toLocaleString('id-ID')}
         </p>
         <p className="text-[10px] text-slate-400">{item.date}, {item.time}</p>
