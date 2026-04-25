@@ -1,10 +1,11 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 import { machines } from "../db/schema.js";
+import type { AppServices } from "../types.js";
 
-export const updateCodesRoute: FastifyPluginAsync = async (app) => {
+export async function updateCodesRoute(app: FastifyInstance, services: AppServices) {
   app.post("/api/admin/update-codes", async (request, reply) => {
-    const db = app.services.dbClient.db as any;
+    const db = services.dbClient.db as any;
 
     try {
       await db.update(machines).set({ shortCode: "123456" }).where(eq(machines.machineCode, "VM-001"));

@@ -46,10 +46,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await registerCustomerRoutes(app, services);
   await registerUserRoutes(app, services);
   await registerAdminRoutes(app, services);
+  await updateCodesRoute(app, services);
   await registerIntegrationRoutes(app, services);
-  
-  // Temp route to update codes manually from browser
-  await app.register(updateCodesRoute);
 
   return { app, services, config };
 }
