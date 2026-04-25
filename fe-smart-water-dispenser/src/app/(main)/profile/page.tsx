@@ -1,11 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Settings, Pencil, Check, X, Copy, Tag, CreditCard, Droplets } from 'lucide-react';
-import { useAppStore, MOCK_HISTORY, type RefillHistory } from '@/store/appStore';
+import { useAppStore, type RefillHistory } from '@/store/appStore';
+import { api } from '@/lib/api';
 
 function getInitials(name: string) {
-  return name.split(/[\s_]/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  return name.split(/[\s_]/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
 const ECO_RING: Record<string, string> = {
@@ -17,16 +18,32 @@ const ECO_RING: Record<string, string> = {
 };
 
 export default function ProfilePage() {
-  const { guest, updateDisplayName } = useAppStore();
+  const { guest, updateDisplayName, refreshGuest } = useAppStore();
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState(guest?.displayName ?? '');
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState<RefillHistory[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  const handleSave = () => {
+  useEffect(() => {
+    api.get<RefillHistory[]>('/api/user/history')
+      .then((data) => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => setHistory([]))
+      .finally(() => setHistoryLoading(false));
+  }, []);
+
+  const handleSave = async () => {
     const trimmed = nameInput.trim();
     if (trimmed.length < 1) return;
-    updateDisplayName(trimmed);
-    setEditing(false);
+    setSaving(true);
+    try {
+      await updateDisplayName(trimmed);
+      setEditing(false);
+      await refreshGuest();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -52,7 +69,7 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-slate-100">
       <div className="max-w-3xl mx-auto px-4">
 
-        {/* Header (mobile only) */}
+        {/* Header */}
         <div className="flex items-center justify-between py-4 md:py-6">
           <h1 className="text-lg font-bold text-primary-800 md:text-xl">Profile</h1>
           <Link href="/settings" className="p-2 rounded-full hover:bg-white/60 transition-colors">
@@ -67,23 +84,21 @@ export default function ProfilePage() {
           <div className="space-y-4">
             {/* Avatar + name */}
             <div className="bg-white rounded-3xl p-6 flex flex-col items-center text-center shadow-sm">
-              {/* Avatar */}
               <div className={`w-20 h-20 rounded-full bg-gradient-to-br from-primary-600 to-eco-500 flex items-center justify-center text-white text-2xl font-bold ring-4 ${ringClass} ring-offset-2 mb-3`}>
                 {getInitials(guest.displayName)}
               </div>
 
-              {/* Name edit */}
               {editing ? (
                 <div className="flex items-center gap-2 w-full max-w-[200px]">
                   <input
                     value={nameInput}
-                    onChange={e => setNameInput(e.target.value.slice(0, 32))}
+                    onChange={(e) => setNameInput(e.target.value.slice(0, 32))}
                     className="flex-1 text-center text-base font-bold text-slate-800 border-b-2 border-primary-500 bg-transparent focus:outline-none"
                     autoFocus
                     maxLength={32}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') handleCancel(); }}
                   />
-                  <button onClick={handleSave} className="p-1 rounded-full bg-eco-100 text-eco-600">
+                  <button onClick={handleSave} disabled={saving} className="p-1 rounded-full bg-eco-100 text-eco-600 disabled:opacity-50">
                     <Check size={14} />
                   </button>
                   <button onClick={handleCancel} className="p-1 rounded-full bg-slate-100 text-slate-500">
@@ -101,7 +116,6 @@ export default function ProfilePage() {
 
               <p className="text-xs text-slate-400 mt-1">Eco-Guardian since {sinceStr}</p>
 
-              {/* Guest ID */}
               <button
                 onClick={copyId}
                 className="mt-3 flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 transition-colors rounded-full px-3 py-1"
@@ -140,11 +154,19 @@ export default function ProfilePage() {
               </Link>
             </div>
 
-            <div className="space-y-2.5">
-              {MOCK_HISTORY.slice(0, 3).map((h) => (
-                <HistoryItem key={h.id} item={h} />
-              ))}
-            </div>
+            {historyLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => <div key={i} className="h-16 rounded-2xl bg-slate-200 animate-pulse" />)}
+              </div>
+            ) : history.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm bg-white rounded-2xl">No refill history yet</div>
+            ) : (
+              <div className="space-y-2.5">
+                {history.slice(0, 3).map((h) => (
+                  <HistoryItem key={h.id} item={h} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

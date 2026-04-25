@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:build": "npm --prefix backend run build",
+    "backend:test": "npm --prefix backend run test",
+    "backend:typecheck": "npm --prefix backend run typecheck"
   },
   "dependencies": {
     "framer-motion": "^12.38.0",

@@ -6,7 +6,7 @@ import { useAppStore } from '@/store/appStore';
 
 const STEPS = [
   { pct: 20, label: 'Connecting to network...' },
-  { pct: 50, label: 'Initializing station...' },
+  { pct: 50, label: 'Initializing your session...' },
   { pct: 80, label: 'Loading stations near you...' },
   { pct: 100, label: 'Ready!' },
 ];
@@ -20,7 +20,6 @@ export default function SplashPage() {
 
   useEffect(() => {
     setVisible(true);
-    initGuest();
 
     let stepIdx = 0;
     const tick = () => {
@@ -31,12 +30,15 @@ export default function SplashPage() {
       stepIdx++;
       if (stepIdx < STEPS.length) {
         setTimeout(tick, stepIdx === 1 ? 500 : stepIdx === 2 ? 400 : 350);
-      } else {
-        setTimeout(() => router.push('/explore'), 600);
       }
     };
     setTimeout(tick, 400);
-  }, []);
+
+    // Init guest session from backend
+    initGuest().then(() => {
+      setTimeout(() => router.push('/explore'), 1200);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="relative min-h-screen bg-white flex flex-col items-center justify-center overflow-hidden">
@@ -49,7 +51,7 @@ export default function SplashPage() {
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
       }`}>
         {/* Logo */}
-        <div className="mb-10" style={{ animationDelay: '0ms' }}>
+        <div className="mb-10">
           <div className={`transition-all duration-600 ${visible ? 'scale-100 opacity-100' : 'scale-75 opacity-0'}`}>
             <Image src="/logo.png" alt="Eco-Flow Logo" width={120} height={120} priority style={{ height: 'auto' }} />
           </div>

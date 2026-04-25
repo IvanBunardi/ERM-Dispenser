@@ -27,6 +27,18 @@ export default function SettingsPage() {
   const router = useRouter();
   const { resetGuest } = useAppStore();
   const [showReset, setShowReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      await resetGuest(); // calls DELETE /api/guest/reset
+    } finally {
+      setResetting(false);
+      setShowReset(false);
+      router.push('/splash');
+    }
+  };
 
   const groups: SettingGroup[] = [
     {
@@ -115,21 +127,23 @@ export default function SettingsPage() {
               </div>
               <h3 className="text-lg font-bold text-slate-800">Reset Guest ID?</h3>
               <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-                This will create a new Guest ID and erase all your history. This action cannot be undone.
+                This will delete your session and create a new Guest ID. All history will be erased.
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowReset(false)}
+                disabled={resetting}
                 className="flex-1 py-3 rounded-2xl border-2 border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => { resetGuest(); setShowReset(false); router.push('/splash'); }}
-                className="flex-1 py-3 rounded-2xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors"
+                onClick={handleReset}
+                disabled={resetting}
+                className="flex-1 py-3 rounded-2xl bg-red-500 text-white text-sm font-semibold hover:bg-red-600 transition-colors disabled:opacity-60"
               >
-                Reset
+                {resetting ? 'Resetting...' : 'Reset'}
               </button>
             </div>
           </div>

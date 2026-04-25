@@ -1,10 +1,22 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Droplets } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { MOCK_HISTORY } from '@/store/appStore';
+import { type RefillHistory } from '@/store/appStore';
+import { api } from '@/lib/api';
 
 export default function HistoryPage() {
   const router = useRouter();
+  const [history, setHistory] = useState<RefillHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<RefillHistory[]>('/api/user/history')
+      .then((data) => setHistory(Array.isArray(data) ? data : []))
+      .catch(() => setHistory([]))
+      .finally(() => setLoading(false));
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="bg-white px-4 py-4 flex items-center gap-3 border-b border-slate-100">
@@ -14,7 +26,13 @@ export default function HistoryPage() {
         <h1 className="text-base font-semibold text-slate-800">Refill History</h1>
       </div>
       <div className="max-w-lg mx-auto px-4 py-4 space-y-2.5">
-        {MOCK_HISTORY.map((item) => (
+        {loading && [1,2,3,4,5].map((i) => (
+          <div key={i} className="h-16 rounded-2xl bg-slate-200 animate-pulse" />
+        ))}
+        {!loading && history.length === 0 && (
+          <div className="text-center py-12 text-slate-400 text-sm">No refill history yet</div>
+        )}
+        {!loading && history.map((item) => (
           <div key={item.id} className="bg-white rounded-2xl px-4 py-3.5 flex items-center gap-3 shadow-sm">
             <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center flex-shrink-0">
               <Droplets size={18} className="text-primary-600" />

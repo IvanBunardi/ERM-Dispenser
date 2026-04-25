@@ -46,6 +46,7 @@ export default function StationMap({ stations, selectedId, onSelect }: Props) {
 
       // Add markers
       stations.forEach((st) => {
+        if (st.lat === null || st.lng === null) return; // skip stations without coordinates
         const color = st.status === 'available' ? '#22C55E'
           : st.status === 'partial' ? '#F59E0B' : '#EF4444';
 
@@ -84,7 +85,7 @@ export default function StationMap({ stations, selectedId, onSelect }: Props) {
   useEffect(() => {
     if (!mapInstance.current || !selectedId) return;
     const station = stations.find(s => s.id === selectedId);
-    if (station) {
+    if (station && station.lat !== null && station.lng !== null) {
       (mapInstance.current as { panTo: (latlng: [number, number]) => void })
         .panTo([station.lat, station.lng]);
     }

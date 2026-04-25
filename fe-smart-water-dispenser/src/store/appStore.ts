@@ -1,6 +1,7 @@
 'use client';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { api } from '@/lib/api';
 
 export type EcoLevel = 'Seedling' | 'Sprout' | 'Sapling' | 'Tree' | 'Emerald';
 
@@ -18,14 +19,17 @@ export interface GuestUser {
 
 export interface Station {
   id: string;
+  machineCode: string;
+  shortCode?: string;
   name: string;
   distance: string;
+  distanceMeters: number | null;
   lastRefilled: string;
   capacity: number;
   status: 'available' | 'partial' | 'unavailable';
-  imageUrl: string;
-  lat: number;
-  lng: number;
+  imageUrl: string | null;
+  lat: number | null;
+  lng: number | null;
   isVerified: boolean;
 }
 
@@ -37,42 +41,11 @@ export interface RefillHistory {
   currency: string;
   date: string;
   time: string;
+  paymentStatus?: string;
+  dispenseStatus?: string;
 }
 
 export type FilterType = 'nearest' | 'verified' | 'highCapacity';
-
-function generateDisplayId(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let result = '';
-  for (let i = 0; i < 6; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-function createGuestUser(): GuestUser {
-  const displayId = generateDisplayId();
-  return {
-    id: crypto.randomUUID(),
-    displayId,
-    displayName: `Guest_${displayId}`,
-    createdAt: new Date().toISOString(),
-    bottlesSaved: 0,
-    totalSpent: 0,
-    co2Reduced: 0,
-    ecoLevel: 'Seedling',
-    weeklyChange: 0,
-  };
-}
-
-// Mock demo data for a user that has been using the app
-const DEMO_USER: Partial<GuestUser> = {
-  bottlesSaved: 250,
-  totalSpent: 124000,
-  co2Reduced: 14.2,
-  ecoLevel: 'Emerald',
-  weeklyChange: 12,
-};
 
 interface AppStore {
   guest: GuestUser | null;
@@ -82,9 +55,10 @@ interface AppStore {
   selectedStationId: string | null;
   notifications: number;
 
-  initGuest: () => void;
-  updateDisplayName: (name: string) => void;
-  resetGuest: () => void;
+  initGuest: () => Promise<void>;
+  refreshGuest: () => Promise<void>;
+  updateDisplayName: (name: string) => Promise<void>;
+  resetGuest: () => Promise<void>;
   setFilter: (f: FilterType) => void;
   selectStation: (id: string | null) => void;
   setOnboarded: () => void;
@@ -98,25 +72,89 @@ export const useAppStore = create<AppStore>()(
       hasSeenOnboarding: false,
       activeFilter: 'nearest',
       selectedStationId: null,
-      notifications: 2,
+      notifications: 0,
 
-      initGuest: () => {
-        if (!get().guest) {
-          const newGuest = { ...createGuestUser(), ...DEMO_USER };
-          set({ guest: newGuest as GuestUser, isInitialized: true });
-        } else {
-          set({ isInitialized: true });
+      initGuest: async () => {
+        try {
+          // Try to hydrate from existing session first
+          const meRes = await api.get<{ guest: any; preferences: any }>('/api/guest/me');
+          const g = meRes.guest;
+          set({
+            guest: {
+              id: g.id,
+              displayId: g.displayId,
+              displayName: g.displayName,
+              createdAt: g.createdAt ?? g.lastActiveAt ?? new Date().toISOString(),
+              bottlesSaved: g.bottlesSaved ?? 0,
+              totalSpent: g.totalSpent ?? 0,
+              co2Reduced: g.co2Reduced ?? 0,
+              ecoLevel: (g.ecoLevel as EcoLevel) ?? 'Seedling',
+              weeklyChange: g.weeklyChange ?? 0,
+            },
+            isInitialized: true,
+          });
+        } catch {
+          // No session — create new guest
+          try {
+            const initRes = await api.post<{ guest: any; preferences: any }>('/api/guest/init', {});
+            const g = initRes.guest;
+            set({
+              guest: {
+                id: g.id,
+                displayId: g.displayId,
+                displayName: g.displayName,
+                createdAt: g.createdAt ?? new Date().toISOString(),
+                bottlesSaved: 0,
+                totalSpent: 0,
+                co2Reduced: 0,
+                ecoLevel: 'Seedling',
+                weeklyChange: 0,
+              },
+              isInitialized: true,
+            });
+          } catch (err) {
+            console.error('Failed to init guest:', err);
+            set({ isInitialized: true });
+          }
         }
       },
 
-      updateDisplayName: (name: string) => {
-        const guest = get().guest;
-        if (guest) set({ guest: { ...guest, displayName: name } });
+      refreshGuest: async () => {
+        try {
+          const meRes = await api.get<{ guest: any; preferences: any }>('/api/guest/me');
+          const g = meRes.guest;
+          set({
+            guest: {
+              id: g.id,
+              displayId: g.displayId,
+              displayName: g.displayName,
+              createdAt: g.createdAt ?? g.lastActiveAt ?? new Date().toISOString(),
+              bottlesSaved: g.bottlesSaved ?? 0,
+              totalSpent: g.totalSpent ?? 0,
+              co2Reduced: g.co2Reduced ?? 0,
+              ecoLevel: (g.ecoLevel as EcoLevel) ?? 'Seedling',
+              weeklyChange: g.weeklyChange ?? 0,
+            },
+          });
+        } catch (err) {
+          console.error('Failed to refresh guest:', err);
+        }
       },
 
-      resetGuest: () => {
-        const newGuest = createGuestUser();
-        set({ guest: newGuest, hasSeenOnboarding: false });
+      updateDisplayName: async (name: string) => {
+        const guest = get().guest;
+        if (!guest) return;
+        await api.put('/api/user/profile', { displayName: name });
+        set({ guest: { ...guest, displayName: name } });
+      },
+
+      resetGuest: async () => {
+        try {
+          await api.delete('/api/guest/reset');
+        } catch {
+          // ignore
+        }
+        set({ guest: null, isInitialized: false, hasSeenOnboarding: false });
       },
 
       setFilter: (f) => set({ activeFilter: f }),
@@ -126,76 +164,9 @@ export const useAppStore = create<AppStore>()(
     {
       name: 'ecoflow-guest',
       partialize: (state) => ({
-        guest: state.guest,
         hasSeenOnboarding: state.hasSeenOnboarding,
+        activeFilter: state.activeFilter,
       }),
-    }
-  )
+    },
+  ),
 );
-
-// Mock stations data
-export const MOCK_STATIONS: Station[] = [
-  {
-    id: '1',
-    name: 'AUDITORIUM PRASMUL',
-    distance: '250m away',
-    lastRefilled: 'Refilled 2h ago',
-    capacity: 92,
-    status: 'available',
-    imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=120&h=120&fit=crop',
-    lat: -6.3003,
-    lng: 106.6395,
-    isVerified: true,
-  },
-  {
-    id: '2',
-    name: 'LOBBY EKA TJIPTA WIDJAJA',
-    distance: '30m away',
-    lastRefilled: 'Refilled 20 min ago',
-    capacity: 0,
-    status: 'unavailable',
-    imageUrl: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?w=120&h=120&fit=crop',
-    lat: -6.3008,
-    lng: 106.6392,
-    isVerified: true,
-  },
-  {
-    id: '3',
-    name: 'GEDUNG PMBS',
-    distance: '500m away',
-    lastRefilled: 'Refilled 5h ago',
-    capacity: 50,
-    status: 'partial',
-    imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=120&h=120&fit=crop',
-    lat: -6.3013,
-    lng: 106.6400,
-    isVerified: false,
-  },
-  {
-    id: '4',
-    name: 'EM AND ENGINEERING LAB',
-    distance: '700m away',
-    lastRefilled: 'Refilled 1h ago',
-    capacity: 78,
-    status: 'available',
-    imageUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?w=120&h=120&fit=crop',
-    lat: -6.3010,
-    lng: 106.6404,
-    isVerified: true,
-  },
-];
-
-export const MOCK_HISTORY: RefillHistory[] = [
-  { id: '1', stationName: 'Oasis Hub Central', waterType: '1.5L Alkaline Water', amount: 3000, currency: 'IDR', date: 'Today', time: '2:45 PM' },
-  { id: '2', stationName: 'GreenWay Station', waterType: '500ml Mineral Water', amount: 1500, currency: 'IDR', date: 'Yesterday', time: '2:45 PM' },
-  { id: '3', stationName: 'Metro Park Refill', waterType: '2.0L Purified Water', amount: 5000, currency: 'IDR', date: 'Tuesday', time: '2:45 PM' },
-  { id: '4', stationName: 'AUDITORIUM PRASMUL', waterType: '1.0L Mineral Water', amount: 2500, currency: 'IDR', date: 'Monday', time: '11:30 AM' },
-  { id: '5', stationName: 'LOBBY EKA TJIPTA', waterType: '750ml Alkaline Water', amount: 2000, currency: 'IDR', date: 'Last Week', time: '3:15 PM' },
-];
-
-export const LEADERBOARD = [
-  { rank: 1, name: 'Alex Rivers', location: 'Engineering Block', points: 1240, isYou: false },
-  { rank: 2, name: 'Sarah Chen', location: 'Design Studio', points: 982, isYou: false },
-  { rank: 3, name: 'Budi Santoso', location: 'Science Lab', points: 754, isYou: false },
-  { rank: 12, name: 'You', location: 'Main Library', points: 250, isYou: true },
-];

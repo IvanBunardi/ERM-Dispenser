@@ -1,12 +1,13 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { Bell, Search, Navigation, X } from 'lucide-react';
 import FilterChip from '@/components/shared/FilterChip';
 import StationCard from '@/components/map/StationCard';
 import CapacityBar from '@/components/shared/CapacityBar';
 import Image from 'next/image';
-import { MOCK_STATIONS, type Station, useAppStore } from '@/store/appStore';
+import { type Station, useAppStore } from '@/store/appStore';
+import { api } from '@/lib/api';
 
 const StationMap = dynamic(() => import('@/components/map/StationMap'), {
   ssr: false,
@@ -16,17 +17,44 @@ const StationMap = dynamic(() => import('@/components/map/StationMap'), {
 export default function ExplorePage() {
   const { activeFilter, setFilter, selectedStationId, selectStation } = useAppStore();
   const [search, setSearch] = useState('');
+  const [stations, setStations] = useState<Station[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const filtered = useMemo(() => {
-    let list = MOCK_STATIONS.filter((s) =>
-      s.name.toLowerCase().includes(search.toLowerCase())
-    );
-    if (activeFilter === 'verified') list = list.filter(s => s.isVerified);
-    if (activeFilter === 'highCapacity') list = list.filter(s => s.capacity >= 70);
-    return list;
-  }, [search, activeFilter]);
+  // Get user geolocation for distance calculation
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLng, setUserLng] = useState<number | null>(null);
 
-  const selectedStation = MOCK_STATIONS.find(s => s.id === selectedStationId) || null;
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLat(pos.coords.latitude);
+          setUserLng(pos.coords.longitude);
+        },
+        () => {}, // ignore if denied
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (activeFilter && activeFilter !== 'nearest') params.set('filter', activeFilter);
+    if (activeFilter === 'nearest') params.set('filter', 'nearest');
+    if (search) params.set('search', search);
+    if (userLat !== null) params.set('lat', String(userLat));
+    if (userLng !== null) params.set('lng', String(userLng));
+
+    setLoading(true);
+    setError('');
+    api.get<Station[]>(`/api/stations?${params.toString()}`)
+      .then((data) => setStations(Array.isArray(data) ? data : []))
+      .catch(() => setError('Failed to load stations'))
+      .finally(() => setLoading(false));
+  }, [activeFilter, search, userLat, userLng]);
+
+  const filtered = stations;
+  const selectedStation = stations.find((s) => s.id === selectedStationId) ?? null;
 
   return (
     <div className="flex flex-col bg-white" style={{ height: '100dvh', paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -39,7 +67,6 @@ export default function ExplorePage() {
         </div>
         <button className="relative p-2 rounded-full hover:bg-slate-100 transition-colors">
           <Bell size={20} className="text-slate-600" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
         </button>
       </header>
 
@@ -52,7 +79,7 @@ export default function ExplorePage() {
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={(e) => setSearch(e.target.value)}
                 placeholder="Find water stations near you..."
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-100 rounded-full text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
               />
@@ -66,7 +93,17 @@ export default function ExplorePage() {
 
           {/* Desktop station list */}
           <div className="hidden md:block flex-1 overflow-y-auto px-4 pb-4 space-y-2">
-            {filtered.map((station) => (
+            {loading && (
+              <div className="space-y-2 pt-2">
+                {[1,2,3].map((i) => (
+                  <div key={i} className="h-24 rounded-2xl bg-slate-100 animate-pulse" />
+                ))}
+              </div>
+            )}
+            {!loading && error && (
+              <div className="text-center py-12 text-slate-400 text-sm">{error}</div>
+            )}
+            {!loading && !error && filtered.map((station) => (
               <div
                 key={station.id}
                 onClick={() => selectStation(station.id === selectedStationId ? null : station.id)}
@@ -82,12 +119,12 @@ export default function ExplorePage() {
                 />
               </div>
             ))}
-            {filtered.length === 0 && (
+            {!loading && !error && filtered.length === 0 && (
               <div className="text-center py-12 text-slate-400 text-sm">No stations found</div>
             )}
           </div>
 
-          {/* Mobile: map only — bottom sheet rendered as fixed overlay below */}
+          {/* Mobile: map only */}
           <div className="flex-1 md:hidden relative">
             <StationMap
               stations={filtered}
@@ -122,7 +159,7 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {/* ── Mobile bottom sheet (fixed, sits above bottom nav) ── */}
+      {/* Mobile bottom sheet */}
       <div
         className="md:hidden fixed left-0 right-0 z-30"
         style={{
@@ -132,7 +169,6 @@ export default function ExplorePage() {
         }}
       >
         <div className="bg-white rounded-t-3xl shadow-[0_-4px_24px_rgba(0,0,0,0.12)] px-4 pt-2.5 pb-4 mx-0">
-          {/* Drag handle */}
           <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-3" />
           {selectedStation && (
             <BottomSheetCard station={selectedStation} onClose={() => selectStation(null)} />
@@ -140,7 +176,6 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {/* Backdrop tap-to-close on mobile */}
       {selectedStation && (
         <div
           className="md:hidden fixed inset-0 z-20"
@@ -165,7 +200,11 @@ function BottomSheetCard({ station, onClose }: { station: Station; onClose: () =
   return (
     <div className="flex items-center gap-3">
       <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100">
-        <Image src={station.imageUrl} alt={station.name} width={64} height={64} className="w-full h-full object-cover" unoptimized />
+        {station.imageUrl ? (
+          <Image src={station.imageUrl} alt={station.name} width={64} height={64} className="w-full h-full object-cover" unoptimized />
+        ) : (
+          <div className="w-full h-full bg-primary-50 flex items-center justify-center text-primary-400 text-xs">💧</div>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <h3 className="text-xs font-bold text-primary-900 uppercase tracking-wide leading-tight">{station.name}</h3>

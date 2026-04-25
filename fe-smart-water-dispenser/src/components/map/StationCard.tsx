@@ -14,14 +14,18 @@ export default function StationCard({ station, onDirections }: Props) {
     <div className="flex items-center gap-3 p-3 bg-white rounded-2xl">
       {/* Thumbnail */}
       <div className="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100">
-        <Image
-          src={station.imageUrl}
-          alt={station.name}
-          width={56}
-          height={56}
-          className="w-full h-full object-cover"
-          unoptimized
-        />
+        {station.imageUrl ? (
+          <Image
+            src={station.imageUrl}
+            alt={station.name}
+            width={56}
+            height={56}
+            className="w-full h-full object-cover"
+            unoptimized
+          />
+        ) : (
+          <div className="w-full h-full bg-primary-50 flex items-center justify-center text-primary-400">💧</div>
+        )}
       </div>
 
       {/* Info */}
