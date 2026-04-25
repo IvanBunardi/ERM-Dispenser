@@ -1,0 +1,338 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@400;500;600&display=swap');
+
+/* Scope all admin styles to .admin-body to prevent leaking to customer UI */
+.admin-body {
+  font-family: 'Inter', sans-serif;
+  background-color: #0047AB;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.admin-body * {
+  box-sizing: border-box;
+}
+
+.admin-body :root {
+  --blue-dark: #0047AB;
+  --orange: #F97316;
+  --green: #16A34A;
+  --red: #DC2626;
+}
+
+.admin-body .wave-bg {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  background: #0047AB;
+  overflow: hidden;
+}
+
+.admin-body .wave-layer {
+  position: absolute;
+  width: 200%; height: 100%;
+  top: 0; left: 0;
+  background-repeat: repeat-x;
+  background-size: 50% 100%;
+}
+
+.admin-body .wave-layer-1 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 200'%3E%3Cpath fill='%230066DD' d='M0,80 C180,120 360,40 540,80 C720,120 900,40 1080,80 C1260,120 1350,60 1440,80 L1440,200 L0,200 Z'/%3E%3C/svg%3E");
+  animation: wave-move 12s linear infinite;
+  opacity: 0.35;
+}
+
+.admin-body .wave-layer-2 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 200'%3E%3Cpath fill='%230044AA' d='M0,100 C200,60 400,140 600,100 C800,60 1000,140 1200,100 C1320,80 1380,110 1440,100 L1440,200 L0,200 Z'/%3E%3C/svg%3E");
+  animation: wave-move 18s linear infinite reverse;
+  opacity: 0.25;
+}
+
+.admin-body .wave-layer-3 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 200'%3E%3Cpath fill='%23003A99' d='M0,60 C160,100 320,20 480,60 C640,100 800,20 960,60 C1120,100 1280,30 1440,60 L1440,200 L0,200 Z'/%3E%3C/svg%3E");
+  animation: wave-move 22s linear infinite;
+  opacity: 0.2;
+}
+
+@keyframes wave-move {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.admin-body .dashboard-container {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.admin-body .header { text-align: center; margin-bottom: 28px; }
+
+.admin-body .header-subtitle {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #F97316;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.admin-body .header-title {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 32px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.admin-body .nav-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.admin-body .nav-tab {
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.admin-body .nav-tab.active { background: #F97316; color: #ffffff; }
+
+.admin-body .nav-tab.inactive {
+  background: rgba(255,255,255,0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+.admin-body .nav-tab.inactive:hover { background: rgba(255,255,255,0.25); }
+
+.admin-body .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .admin-body .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .admin-body .header-title { font-size: 22px; }
+}
+
+@media (max-width: 480px) {
+  .admin-body .stats-grid { grid-template-columns: 1fr; }
+}
+
+.admin-body .stat-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+}
+
+.admin-body .stat-card-border-blue  { border-left: 4px solid #2563EB; }
+.admin-body .stat-card-border-green { border-left: 4px solid #16A34A; }
+.admin-body .stat-card-border-orange{ border-left: 4px solid #F97316; }
+.admin-body .stat-card-border-red   { border-left: 4px solid #DC2626; }
+
+.admin-body .stat-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  margin-bottom: 8px;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.admin-body .stat-value {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.admin-body .stat-value.blue   { color: #2563EB; }
+.admin-body .stat-value.green  { color: #16A34A; }
+.admin-body .stat-value.orange { color: #F97316; }
+.admin-body .stat-value.red    { color: #DC2626; }
+
+.admin-body .stat-value-row { display: flex; align-items: baseline; gap: 6px; }
+
+.admin-body .stat-unit {
+  font-size: 14px;
+  font-weight: 600;
+  color: #16A34A;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.admin-body .table-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  margin-top: 4px;
+}
+
+.admin-body .table-title {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 20px;
+}
+
+.admin-body .table-wrapper { overflow-x: auto; }
+
+.admin-body table { width: 100%; border-collapse: collapse; }
+
+.admin-body thead th {
+  text-align: left;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.admin-body tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.15s; }
+.admin-body tbody tr:last-child { border-bottom: none; }
+.admin-body tbody tr:hover { background: #f8fafc; }
+
+.admin-body tbody td {
+  padding: 12px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.admin-body .badge {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.admin-body .badge-success { background: #16A34A; color: white; }
+.admin-body .badge-pending { background: #F97316; color: white; }
+.admin-body .badge-cancel  { background: #DC2626; color: white; }
+
+.admin-body .iot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 640px) { .admin-body .iot-grid { grid-template-columns: 1fr; } }
+
+.admin-body .iot-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+}
+
+.admin-body .iot-card-title {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.admin-body .iot-card-value {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  color: #2563EB;
+}
+
+.admin-body .iot-card-value.green  { color: #16A34A; }
+.admin-body .iot-card-value.orange { color: #F97316; }
+
+.admin-body .control-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-body .control-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px 22px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+}
+
+.admin-body .control-label {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 12px;
+}
+
+.admin-body .toggle-row { display: flex; align-items: center; gap: 12px; }
+
+.admin-body .toggle {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  background: #16A34A;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.admin-body .toggle.off { background: #cbd5e1; }
+
+.admin-body .toggle-knob {
+  position: absolute;
+  top: 3px; right: 3px;
+  width: 20px; height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.admin-body .toggle.off .toggle-knob { right: auto; left: 3px; }
+
+.admin-body .toggle-status { font-family: 'Montserrat', sans-serif; font-size: 13px; font-weight: 700; }
+.admin-body .toggle-status.on  { color: #16A34A; }
+.admin-body .toggle-status.off { color: #94a3b8; }
+
+.admin-body .env-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+}
+
+.admin-body .progress-bar-wrap {
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.admin-body .progress-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #16A34A, #22C55E);
+}
