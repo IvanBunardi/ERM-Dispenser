@@ -24,6 +24,8 @@ describe("backend service", () => {
         MQTT_MODE: "mock",
         SESSION_SECRET: "test-secret-that-is-long-enough",
         INTEGRATION_SHARED_SECRET: "integration-secret",
+        ADMIN_EMAIL: "admin@ecoflow.local",
+        ADMIN_PASSWORD: "admin12345",
       },
     });
     app = built.app;
@@ -69,7 +71,7 @@ describe("backend service", () => {
       method: "POST",
       url: "/api/scan/verify",
       payload: {
-        code: "PRASMUL1",
+        code: "123456",
       },
     });
     expect(verifyResponse.statusCode).toBe(200);

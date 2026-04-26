@@ -1,0 +1,41 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e4]:
+      - img "Eco-Flow" [ref=e5]
+      - generic [ref=e6]: Eco-Flow
+    - navigation [ref=e7]:
+      - link "Explore" [ref=e8] [cursor=pointer]:
+        - /url: /explore
+        - img [ref=e9]
+        - text: Explore
+      - link "Scan" [ref=e12] [cursor=pointer]:
+        - /url: /scan
+        - img [ref=e13]
+        - text: Scan
+      - link "Stats" [ref=e19] [cursor=pointer]:
+        - /url: /stats
+        - img [ref=e20]
+        - text: Stats
+      - link "Profile" [ref=e21] [cursor=pointer]:
+        - /url: /profile
+        - img [ref=e22]
+        - text: Profile
+  - main [ref=e25]:
+    - generic [ref=e27]:
+      - heading "Scan QR Code" [level=1] [ref=e29]
+      - generic [ref=e31]:
+        - generic [ref=e32]:
+          - button "Scan via Webcam" [ref=e33]
+          - button "Enter Code" [ref=e34]
+        - generic [ref=e35]:
+          - generic [ref=e37]:
+            - img [ref=e39]
+            - paragraph [ref=e42]: Camera follows your web access preference
+            - paragraph [ref=e43]: Enable camera to start scanning automatically from this page, or switch to manual code entry.
+            - generic [ref=e44]:
+              - button "Enable camera" [ref=e45]
+              - button "Access settings" [active] [ref=e46]
+          - paragraph [ref=e47]: Turn camera on from access settings or use manual code entry
+          - button "From Gallery" [ref=e49]:
+            - img [ref=e50]
+            - text: From Gallery

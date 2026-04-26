@@ -16,9 +16,12 @@ import { createTransactionWithPayment, getActiveMachineTransaction } from "../li
 import { fail, ok } from "../lib/http.js";
 
 const transactionSchema = z.object({
-  machineId: z.string().min(1),
+  machineId: z.string().min(1).optional(),
+  machineCode: z.string().min(1).optional(),
   volumeMl: z.number().int().positive(),
   sourceChannel: z.string().default("TABLET_KIOSK"),
+}).refine((value) => Boolean(value.machineId || value.machineCode), {
+  message: "machineId or machineCode is required",
 });
 
 export async function registerCustomerRoutes(app: FastifyInstance, services: AppServices) {
@@ -33,7 +36,10 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
       return fail(reply, 400, "BAD_REQUEST", "Invalid transaction payload");
     }
 
-    const [machine] = await db.select().from(machines).where(eq(machines.id, parsed.data.machineId)).limit(1);
+    const lookupByMachineCode = parsed.data.machineCode?.trim().toUpperCase();
+    const [machine] = lookupByMachineCode
+      ? await db.select().from(machines).where(eq(machines.machineCode, lookupByMachineCode)).limit(1)
+      : await db.select().from(machines).where(eq(machines.id, parsed.data.machineId!)).limit(1);
     if (!machine) {
       return fail(reply, 404, "NOT_FOUND", "Machine not found");
     }
@@ -102,6 +108,7 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
 
   app.get("/api/customer/machines/:machineId", async (request, reply) => {
     const db = services.dbClient.db as any;
+    const auth = await getGuestAuth(request, services);
     const { machineId } = request.params as { machineId: string };
     const [machine] = await db.select().from(machines).where(eq(machines.machineCode, machineId)).limit(1);
     if (!machine) {
@@ -119,17 +126,26 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
       .orderBy(desc(machineStatusSnapshots.reportedAt))
       .limit(1);
     const activeTransaction = await getActiveMachineTransaction(services, machine.id);
+    const guestUserId = auth?.user.id ?? null;
+    const resumableTransaction = activeTransaction?.guestUserId && guestUserId && activeTransaction.guestUserId === guestUserId
+      ? activeTransaction
+      : null;
+    const busyState = activeTransaction && !resumableTransaction
+      ? activeTransaction.dispenseStatus
+      : null;
 
     return ok(reply, {
       machine,
       volumeOptions,
       status,
-      activeTransaction,
+      activeTransaction: resumableTransaction,
+      busyState,
     });
   });
 
   app.post("/api/customer/transactions", async (request, reply) => {
-    return createMachineTransaction(request.body, null, reply);
+    const auth = await getGuestAuth(request, services);
+    return createMachineTransaction(request.body, auth?.user.id ?? null, reply);
   });
 
   app.get("/api/customer/transactions/:transactionId", async (request, reply) => {

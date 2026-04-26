@@ -340,7 +340,29 @@ export async function getActiveMachineTransaction(services: AppServices, machine
     .where(eq(transactions.machineId, machineId))
     .orderBy(desc(transactions.createdAt))
     .limit(10);
-  return rows.find((row: any) => !["COMPLETED", "CANCELLED", "FAILED"].includes(row.dispenseStatus)) ?? null;
+
+  for (const row of rows) {
+    if (["COMPLETED", "CANCELLED", "FAILED"].includes(row.dispenseStatus)) continue;
+    if (["FAILED", "EXPIRED", "REFUNDED"].includes(row.paymentStatus)) continue;
+
+    if (row.dispenseStatus !== "WAITING_PAYMENT") {
+      return row;
+    }
+
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.transactionId, row.id))
+      .limit(1);
+
+    if (payment?.expiresAt && new Date(payment.expiresAt) <= new Date()) {
+      continue;
+    }
+
+    return row;
+  }
+
+  return null;
 }
 
 export async function buildDashboardSummary(services: AppServices) {

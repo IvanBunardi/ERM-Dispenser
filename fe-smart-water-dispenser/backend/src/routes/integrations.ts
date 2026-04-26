@@ -86,6 +86,17 @@ export async function registerIntegrationRoutes(app: FastifyInstance, services: 
             amount: transaction.grossAmount,
           },
         });
+        // Wokwi enters WAIT_PAYMENT after START_ORDER, so send a second
+        // signal to advance the simulator into the post-payment flow.
+        await publishMachineCommand(services, {
+          machineId: machine.id,
+          machineCode: machine.machineCode,
+          transactionId: transaction.id,
+          commandType: "PAYMENT_PAID",
+          payload: {
+            transactionId: transaction.id,
+          },
+        });
       }
     }
 

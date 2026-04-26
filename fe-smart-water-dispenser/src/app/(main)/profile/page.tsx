@@ -66,7 +66,7 @@ export default function ProfilePage() {
   const sinceStr = sinceDate.toLocaleString('en-US', { month: 'short', year: 'numeric' });
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="bg-slate-100">
       <div className="max-w-3xl mx-auto px-4">
 
         {/* Header */}

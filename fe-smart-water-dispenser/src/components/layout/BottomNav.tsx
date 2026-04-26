@@ -1,7 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Compass, QrCode, BarChart2, User } from 'lucide-react';
+import { Suspense } from 'react';
 
 const tabs = [
   { href: '/explore', label: 'Explore', icon: Compass },
@@ -10,8 +11,13 @@ const tabs = [
   { href: '/profile', label: 'Profile', icon: User },
 ];
 
-export default function BottomNav() {
+function BottomNavContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const isTabletMode = searchParams.get('mode') === 'tablet';
+
+  if (isTabletMode) return null;
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 md:hidden"
          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
@@ -34,5 +40,13 @@ export default function BottomNav() {
         })}
       </div>
     </nav>
+  );
+}
+
+export default function BottomNav() {
+  return (
+    <Suspense fallback={null}>
+      <BottomNavContent />
+    </Suspense>
   );
 }

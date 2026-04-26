@@ -44,7 +44,7 @@ function PaymentFinishContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="bg-slate-50 flex items-center justify-center p-4">
       <div className="bg-white max-w-sm w-full rounded-3xl shadow-sm border border-slate-100 p-8 text-center">
         <div className={`w-24 h-24 mx-auto ${statusConfig.bgColor} rounded-full flex items-center justify-center mb-6`}>
           {statusConfig.icon}

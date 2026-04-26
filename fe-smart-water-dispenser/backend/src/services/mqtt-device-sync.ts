@@ -1,0 +1,270 @@
+import { eq } from "drizzle-orm";
+import { appendTransactionState, applyDeviceEvent, updateCustomerImpact } from "../lib/domain.js";
+import { machineStatusSnapshots, machines, transactions, dispenseSessions } from "../db/schema.js";
+import type { AppServices } from "../types.js";
+import type { IncomingMqttMessage, MqttProvider } from "./mqtt.js";
+
+type TelemetryPayload = {
+  machineId: string;
+  transactionId: string | null;
+  state: string | null;
+  bottleDetected: boolean;
+  pumpRunning: boolean;
+  filledMl: number;
+  flowRateLpm: number | null;
+  error: string | null;
+};
+
+const STATE_TO_DISPENSE_STATUS: Record<string, string> = {
+  WAIT_PAYMENT: "WAITING_PAYMENT",
+  PAYMENT_SUCCESS: "WAITING_BOTTLE",
+  WAIT_BOTTLE: "WAITING_BOTTLE",
+  READY_TO_FILL: "READY_TO_FILL",
+  FILLING: "FILLING",
+  COMPLETE: "COMPLETED",
+  CANCELLED: "CANCELLED",
+  ERROR: "FAILED",
+};
+
+function parseTopic(topic: string) {
+  const parts = topic.split("/");
+  if (parts.length !== 3 || parts[0] !== "vending") return null;
+
+  return {
+    machineCode: parts[1],
+    channel: parts[2],
+  };
+}
+
+function parseJsonPayload(payload: string) {
+  try {
+    const parsed = JSON.parse(payload);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function toTelemetryPayload(machineCode: string, payload: Record<string, unknown>): TelemetryPayload {
+  const transactionId = typeof payload.transactionId === "string" && payload.transactionId.length > 0
+    ? payload.transactionId
+    : null;
+
+  return {
+    machineId: typeof payload.machineId === "string" && payload.machineId.length > 0
+      ? payload.machineId
+      : machineCode,
+    transactionId,
+    state: typeof payload.state === "string" ? payload.state : null,
+    bottleDetected: Boolean(payload.bottleDetected),
+    pumpRunning: Boolean(payload.pumpRunning),
+    filledMl: typeof payload.filledMl === "number" ? payload.filledMl : 0,
+    flowRateLpm: typeof payload.flowRateLpm === "number" ? payload.flowRateLpm : null,
+    error: typeof payload.error === "string" && payload.error.length > 0 ? payload.error : null,
+  };
+}
+
+function mapOperationStatus(state: string | null, pumpRunning: boolean) {
+  if (state === "ERROR") return "ERROR";
+  if (pumpRunning || ["WAIT_PAYMENT", "PAYMENT_SUCCESS", "WAIT_BOTTLE", "READY_TO_FILL", "FILLING"].includes(state ?? "")) {
+    return "BUSY";
+  }
+
+  return "IDLE";
+}
+
+async function findMachineByCode(services: AppServices, machineCode: string) {
+  const db = services.dbClient.db as any;
+  const [machine] = await db.select().from(machines).where(eq(machines.machineCode, machineCode)).limit(1);
+  return machine ?? null;
+}
+
+async function ingestTelemetrySnapshot(
+  services: AppServices,
+  machineCode: string,
+  channel: string,
+  telemetry: TelemetryPayload,
+) {
+  const db = services.dbClient.db as any;
+  const machine = await findMachineByCode(services, machineCode);
+  if (!machine) return;
+
+  await db.insert(machineStatusSnapshots).values({
+    machineId: machine.id,
+    state: telemetry.state ?? channel.toUpperCase(),
+    bottleDetected: telemetry.bottleDetected,
+    pumpRunning: telemetry.pumpRunning,
+    filledMl: telemetry.filledMl,
+    flowRateLpm: telemetry.flowRateLpm !== null ? String(telemetry.flowRateLpm) : null,
+    source: `MQTT_${channel.toUpperCase()}`,
+  });
+
+  await db
+    .update(machines)
+    .set({
+      connectivityStatus: "ONLINE",
+      operationStatus: mapOperationStatus(telemetry.state, telemetry.pumpRunning),
+      lastSeenAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(machines.id, machine.id));
+
+  if (!telemetry.transactionId || !telemetry.state) return;
+
+  const nextDispenseStatus = STATE_TO_DISPENSE_STATUS[telemetry.state];
+  if (!nextDispenseStatus) return;
+
+  const [transaction] = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.id, telemetry.transactionId))
+    .limit(1);
+  if (!transaction || transaction.machineId !== machine.id || transaction.dispenseStatus === nextDispenseStatus) {
+    return;
+  }
+
+  const nextValues: Record<string, unknown> = {
+    dispenseStatus: nextDispenseStatus,
+  };
+
+  if (nextDispenseStatus === "COMPLETED" || nextDispenseStatus === "CANCELLED" || nextDispenseStatus === "FAILED") {
+    nextValues.completedAt = new Date();
+  }
+
+  await db
+    .update(transactions)
+    .set(nextValues)
+    .where(eq(transactions.id, transaction.id));
+
+  if (nextDispenseStatus === "FILLING") {
+    await db
+      .update(dispenseSessions)
+      .set({
+        startedAt: new Date(),
+        resultStatus: "IN_PROGRESS",
+      })
+      .where(eq(dispenseSessions.transactionId, transaction.id));
+  }
+
+  if (nextDispenseStatus === "COMPLETED") {
+    await db
+      .update(dispenseSessions)
+      .set({
+        actualFilledMl: telemetry.filledMl > 0 ? telemetry.filledMl : transaction.volumeMl,
+        averageFlowRateLpm: telemetry.flowRateLpm !== null ? String(telemetry.flowRateLpm) : null,
+        endedAt: new Date(),
+        resultStatus: "COMPLETED",
+      })
+      .where(eq(dispenseSessions.transactionId, transaction.id));
+
+    await updateCustomerImpact(
+      services,
+      transaction.guestUserId,
+      transaction.grossAmount,
+      telemetry.filledMl > 0 ? telemetry.filledMl : transaction.volumeMl,
+    );
+  }
+
+  if (nextDispenseStatus === "CANCELLED" || nextDispenseStatus === "FAILED") {
+    await db
+      .update(dispenseSessions)
+      .set({
+        endedAt: new Date(),
+        resultStatus: nextDispenseStatus,
+      })
+      .where(eq(dispenseSessions.transactionId, transaction.id));
+  }
+
+  await appendTransactionState(
+    services,
+    transaction.id,
+    nextDispenseStatus,
+    "MQTT_STATUS",
+    machineCode,
+    transaction.dispenseStatus,
+    {
+      state: telemetry.state,
+      flowRateLpm: telemetry.flowRateLpm,
+      filledMl: telemetry.filledMl,
+    },
+  );
+}
+
+async function ingestAvailability(
+  services: AppServices,
+  machineCode: string,
+  payload: string,
+) {
+  const db = services.dbClient.db as any;
+  const machine = await findMachineByCode(services, machineCode);
+  if (!machine) return;
+
+  const isOnline = payload.trim().toLowerCase() === "online";
+  await db
+    .update(machines)
+    .set({
+      connectivityStatus: isOnline ? "ONLINE" : "OFFLINE",
+      lastSeenAt: isOnline ? new Date() : machine.lastSeenAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(machines.id, machine.id));
+}
+
+async function ingestEvent(
+  services: AppServices,
+  machineCode: string,
+  payload: Record<string, unknown>,
+) {
+  const rawEvent = typeof payload.event === "string" ? payload.event : null;
+  if (!rawEvent) return;
+
+  const mappedEvent =
+    rawEvent === "FILLING_COMPLETE" ? "FILLING_COMPLETED" :
+    rawEvent === "ORDER_CANCELLED" || rawEvent === "CANCEL_BUTTON" ? "TRANSACTION_CANCELLED" :
+    rawEvent === "DEVICE_ERROR" || rawEvent === "BOTTLE_REMOVED_FILLING" ? "ERROR_RAISED" :
+    rawEvent;
+
+  const telemetry = toTelemetryPayload(machineCode, payload);
+  await applyDeviceEvent(services, {
+    machineCode,
+    transactionId: telemetry.transactionId,
+    topic: `vending/${machineCode}/event`,
+    eventType: mappedEvent,
+    payload: {
+      ...payload,
+      state: telemetry.state,
+      bottleDetected: telemetry.bottleDetected,
+      pumpRunning: telemetry.pumpRunning,
+      filledMl: telemetry.filledMl,
+      flowRateLpm: telemetry.flowRateLpm,
+    },
+  });
+}
+
+async function handleInboundMqttMessage(services: AppServices, message: IncomingMqttMessage) {
+  const parsedTopic = parseTopic(message.topic);
+  if (!parsedTopic) return;
+
+  const { machineCode, channel } = parsedTopic;
+  if (channel === "availability") {
+    await ingestAvailability(services, machineCode, message.payload);
+    return;
+  }
+
+  const payload = parseJsonPayload(message.payload);
+  if (!payload) return;
+
+  if (channel === "event") {
+    await ingestEvent(services, machineCode, payload);
+    return;
+  }
+
+  if (channel === "status" || channel === "progress") {
+    await ingestTelemetrySnapshot(services, machineCode, channel, toTelemetryPayload(machineCode, payload));
+  }
+}
+
+export function registerMqttDeviceSync(services: AppServices) {
+  const provider = services.mqtt as MqttProvider;
+  provider.setMessageHandler?.((message) => handleInboundMqttMessage(services, message));
+}

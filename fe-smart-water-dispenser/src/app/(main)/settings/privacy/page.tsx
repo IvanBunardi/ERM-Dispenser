@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/store/appStore';
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -13,8 +14,18 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 export default function PrivacyPage() {
   const router = useRouter();
-  const [pub, setPub] = useState(true);
-  const [leaderboard, setLeaderboard] = useState(true);
+  const preferences = useAppStore((s) => s.preferences);
+  const updatePreferences = useAppStore((s) => s.updatePreferences);
+  const [saving, setSaving] = useState(false);
+
+  const toggleLeaderboard = async () => {
+    setSaving(true);
+    try {
+      await updatePreferences({ publicLeaderboard: !preferences.publicLeaderboard });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -29,19 +40,13 @@ export default function PrivacyPage() {
         <div className="bg-white rounded-2xl shadow-sm divide-y divide-slate-100">
           <div className="flex items-center gap-3 px-4 py-4">
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-800">Public Profile</p>
-              <p className="text-xs text-slate-400 mt-0.5">Allow others to see your display name</p>
-            </div>
-            <Toggle checked={pub} onChange={() => setPub(!pub)} />
-          </div>
-          <div className="flex items-center gap-3 px-4 py-4">
-            <div className="flex-1">
               <p className="text-sm font-medium text-slate-800">Leaderboard Visibility</p>
               <p className="text-xs text-slate-400 mt-0.5">Show your name on campus leaderboard</p>
             </div>
-            <Toggle checked={leaderboard} onChange={() => setLeaderboard(!leaderboard)} />
+            <Toggle checked={preferences.publicLeaderboard} onChange={() => { void toggleLeaderboard(); }} />
           </div>
         </div>
+        {saving && <p className="text-xs text-slate-400 px-1">Saving preference...</p>}
         <p className="text-xs text-slate-400 px-1">
           Eco-Flow does not require registration. Your data is linked to your browser session only and is not shared with third parties.
         </p>

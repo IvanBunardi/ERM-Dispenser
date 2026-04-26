@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppServices } from "../types.js";
 import { machineStatusSnapshots, machineVolumeOptions, machines, sites } from "../db/schema.js";
@@ -19,14 +19,27 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
     const filter = typeof request.query === "object" && request.query && "filter" in request.query ? String((request.query as any).filter) : null;
     const search = typeof request.query === "object" && request.query && "search" in request.query ? String((request.query as any).search).toLowerCase() : "";
 
-    const machineRows = await db.select().from(machines);
-    const siteRows = await db.select().from(sites);
-    const statusRows = await db.select().from(machineStatusSnapshots).orderBy(desc(machineStatusSnapshots.reportedAt));
+    const [machineRows, siteRows, allStatusRows] = await Promise.all([
+      db.select().from(machines),
+      db.select().from(sites),
+      db.select().from(machineStatusSnapshots).orderBy(desc(machineStatusSnapshots.reportedAt))
+    ]);
+
+    // Use Maps for O(1) lookup
+    const siteMap = new Map(siteRows.map((s: any) => [s.id, s]));
+    
+    // Only keep the latest status per machine
+    const latestStatusMap = new Map();
+    for (const s of allStatusRows) {
+      if (!latestStatusMap.has(s.machineId)) {
+        latestStatusMap.set(s.machineId, s);
+      }
+    }
 
     const stationRows = machineRows
       .map((machine: any) => {
-        const site = siteRows.find((row: any) => row.id === machine.siteId);
-        const latestStatus = statusRows.find((row: any) => row.machineId === machine.id);
+        const site = siteMap.get(machine.siteId);
+        const latestStatus = latestStatusMap.get(machine.id);
         const distanceMeters = calculateDistanceMeters(
           lat,
           lng,
@@ -104,7 +117,11 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
       return fail(reply, 400, "BAD_REQUEST", "QR code is required");
     }
 
-    const [machine] = await db.select().from(machines).where(eq(machines.shortCode, code)).limit(1);
+    const [machine] = await db
+      .select()
+      .from(machines)
+      .where(or(eq(machines.shortCode, code), eq(machines.machineCode, code)))
+      .limit(1);
     if (!machine) {
       return fail(reply, 404, "NOT_FOUND", "Machine code not found");
     }

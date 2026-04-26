@@ -50,7 +50,7 @@ export default function StatsPage() {
   const co2 = useCountUp(Math.round((stats?.co2ReducedKg ?? 0) * 10), 1500);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="bg-slate-50">
       <div className="max-w-2xl mx-auto px-4 py-6 md:py-8">
 
         {/* Header */}

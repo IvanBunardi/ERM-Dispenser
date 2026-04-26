@@ -80,7 +80,6 @@ export function calculateDistanceMeters(
 }
 
 export function formatDistanceLabel(distanceMeters: number | null) {
-  if (distanceMeters == null) return "Unknown distance";
-  if (distanceMeters < 1000) return `${distanceMeters}m away`;
-  return `${(distanceMeters / 1000).toFixed(1)}km away`;
+  if (distanceMeters == null) return "Location unavailable";
+  return `${(distanceMeters / 1000).toFixed(distanceMeters < 10000 ? 1 : 0)} km away`;
 }

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/store/appStore';
 
 const LANGS = [
   { code: 'en', label: 'English', native: 'English' },
@@ -11,7 +12,20 @@ const LANGS = [
 
 export default function LanguagePage() {
   const router = useRouter();
-  const [selected, setSelected] = useState('en');
+  const preferences = useAppStore((s) => s.preferences);
+  const updatePreferences = useAppStore((s) => s.updatePreferences);
+  const [selected, setSelected] = useState(preferences.languageCode);
+  const [saving, setSaving] = useState(false);
+
+  const selectLanguage = async (code: string) => {
+    setSelected(code);
+    setSaving(true);
+    try {
+      await updatePreferences({ languageCode: code });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -25,7 +39,7 @@ export default function LanguagePage() {
       <div className="max-w-md mx-auto px-4 py-5">
         <div className="bg-white rounded-2xl shadow-sm divide-y divide-slate-100">
           {LANGS.map((lang) => (
-            <button key={lang.code} onClick={() => setSelected(lang.code)} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 transition-colors text-left">
+            <button key={lang.code} onClick={() => { void selectLanguage(lang.code); }} className="w-full flex items-center gap-3 px-4 py-4 hover:bg-slate-50 transition-colors text-left">
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-800">{lang.label}</p>
                 <p className="text-xs text-slate-400">{lang.native}</p>
@@ -34,6 +48,7 @@ export default function LanguagePage() {
             </button>
           ))}
         </div>
+        {saving && <p className="text-xs text-slate-400 mt-3 px-1">Saving language...</p>}
       </div>
     </div>
   );

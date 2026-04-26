@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { useAppStore } from '@/store/appStore';
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -18,20 +19,25 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const [settings, setSettings] = useState({
-    stationRefill: true,
-    weeklyStats: true,
-    promotions: false,
-    lowCapacity: true,
-  });
+  const preferences = useAppStore((s) => s.preferences);
+  const updatePreferences = useAppStore((s) => s.updatePreferences);
+  const [saving, setSaving] = useState(false);
 
-  const toggle = (key: keyof typeof settings) => setSettings(s => ({ ...s, [key]: !s[key] }));
+  const toggleNotifications = async () => {
+    const next = !preferences.notificationsEnabled;
+    setSaving(true);
+    try {
+      await updatePreferences({ notificationsEnabled: next });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const items = [
-    { key: 'stationRefill' as const, label: 'Station Refilled', desc: 'When a nearby station is restocked' },
-    { key: 'weeklyStats' as const, label: 'Weekly Stats', desc: 'Your weekly environmental impact summary' },
-    { key: 'lowCapacity' as const, label: 'Low Capacity Alert', desc: 'When favorite stations are running low' },
-    { key: 'promotions' as const, label: 'Promotions', desc: 'Special offers and new features' },
+    { label: 'Station status alerts', desc: 'Nearby station availability and low-capacity warnings' },
+    { label: 'Dispense progress updates', desc: 'Payment confirmed, ready to fill, and completion events' },
+    { label: 'Weekly eco summary', desc: 'Your environmental impact snapshot and milestones' },
+    { label: 'Product updates', desc: 'Announcements about Eco-Flow features and service notices' },
   ];
 
   return (
@@ -45,16 +51,26 @@ export default function NotificationsPage() {
       </div>
       <div className="max-w-md mx-auto px-4 py-5">
         <div className="bg-white rounded-2xl shadow-sm divide-y divide-slate-100">
-          {items.map(({ key, label, desc }) => (
-            <div key={key} className="flex items-center gap-3 px-4 py-4">
+          <div className="flex items-center gap-3 px-4 py-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-800">Enable Notifications</p>
+              <p className="text-xs text-slate-400 mt-0.5">Master switch for alerts and reminders</p>
+            </div>
+            <Toggle checked={preferences.notificationsEnabled} onChange={() => { void toggleNotifications(); }} />
+          </div>
+          {items.map(({ label, desc }) => (
+            <div key={label} className="flex items-center gap-3 px-4 py-4">
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-800">{label}</p>
                 <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
               </div>
-              <Toggle checked={settings[key]} onChange={() => toggle(key)} />
+              <span className={`text-xs font-semibold ${preferences.notificationsEnabled ? 'text-eco-600' : 'text-slate-400'}`}>
+                {preferences.notificationsEnabled ? 'On' : 'Off'}
+              </span>
             </div>
           ))}
         </div>
+        {saving && <p className="text-xs text-slate-400 mt-3 px-1">Saving preference...</p>}
       </div>
     </div>
   );

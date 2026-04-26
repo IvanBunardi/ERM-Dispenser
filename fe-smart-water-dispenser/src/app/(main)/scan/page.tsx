@@ -1,12 +1,14 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, Image as ImageIcon, Keyboard, X, CameraOff } from 'lucide-react';
+import { Zap, Image as ImageIcon, Keyboard, X, CameraOff, ShieldCheck } from 'lucide-react';
+import { useAppStore } from '@/store/appStore';
 
 type CameraStatus = 'idle' | 'requesting' | 'active' | 'denied' | 'unsupported';
 
 export default function ScanPage() {
   const router = useRouter();
+  const { permissionPrefs, updatePermissionPrefs } = useAppStore();
 
   // ── Shared refs ──
   const mobileVideoRef = useRef<HTMLVideoElement>(null);
@@ -51,10 +53,12 @@ export default function ScanPage() {
       const track = stream.getVideoTracks()[0];
       const caps = track.getCapabilities?.() as Record<string, unknown> | undefined;
       setTorchSupported(!!caps?.torch);
+      updatePermissionPrefs({ cameraEnabled: true });
       setStatus('active');
     } catch (err: unknown) {
       const name = (err as { name?: string })?.name;
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        updatePermissionPrefs({ cameraEnabled: false });
         setStatus('denied');
       } else {
         setStatus('unsupported');
@@ -71,9 +75,13 @@ export default function ScanPage() {
 
   // ── Mount / unmount ──
   useEffect(() => {
-    startCamera();
+    if (permissionPrefs.cameraEnabled) {
+      startCamera();
+    } else {
+      setStatus('idle');
+    }
     return () => stopCamera();
-  }, [startCamera, stopCamera]);
+  }, [permissionPrefs.cameraEnabled, startCamera, stopCamera]);
 
   // ── QR scan loop ──
   useEffect(() => {
@@ -191,6 +199,17 @@ export default function ScanPage() {
         <div className="absolute inset-0 bg-black/40" />
 
         {/* ── States: requesting / denied / unsupported ── */}
+        {status === 'idle' && !permissionPrefs.cameraEnabled && (
+          <PermissionGate
+            title="Camera is managed by your web access preference"
+            body="Turn camera access on to scan QR codes instantly, or continue with manual code input."
+            primaryLabel="Enable camera"
+            secondaryLabel="Use manual code"
+            onPrimary={() => startCamera()}
+            onSecondary={() => setDesktopTab('manual')}
+          />
+        )}
+
         {status === 'requesting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3">
             <div className="w-10 h-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -212,9 +231,14 @@ export default function ScanPage() {
               </p>
             </div>
             {status === 'denied' && (
-              <button onClick={() => startCamera()} className="bg-white text-black font-semibold text-sm px-5 py-2.5 rounded-full">
-                Try Again
-              </button>
+              <div className="flex gap-3">
+                <button onClick={() => startCamera()} className="bg-white text-black font-semibold text-sm px-5 py-2.5 rounded-full">
+                  Try Again
+                </button>
+                <button onClick={() => router.push('/splash')} className="bg-white/15 border border-white/20 text-white font-semibold text-sm px-5 py-2.5 rounded-full">
+                  Check Again
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -339,6 +363,8 @@ export default function ScanPage() {
                 onRetry={() => startCamera('user')}
                 fileInputRef={fileInputRef}
                 onFileChange={handleFileChange}
+                cameraPreferenceEnabled={permissionPrefs.cameraEnabled}
+                onOpenAccessSettings={() => router.push('/splash')}
               />
             ) : (
               <form onSubmit={handleManualSubmit} className="space-y-4">
@@ -347,14 +373,14 @@ export default function ScanPage() {
                   <input
                     value={code}
                     onChange={e => { setCode(e.target.value.toUpperCase().slice(0, 8)); setCodeError(''); }}
-                    placeholder="e.g. PRASMUL1"
+                    placeholder="e.g. VM-002 / 654321"
                     className="w-full bg-white/10 border-2 border-white/20 text-white placeholder:text-white/30 rounded-2xl px-4 py-3 font-mono text-lg tracking-widest text-center uppercase focus:outline-none focus:border-white/60 transition-colors"
                     maxLength={8}
                   />
                   {codeError && <p className="text-red-300 text-xs mt-1.5">{codeError}</p>}
                 </div>
                 <p className="text-white/50 text-xs text-center">
-                  Find the code printed on the dispenser label
+                  Use the short code or machine code printed on the dispenser
                 </p>
                 <button
                   type="submit"
@@ -376,6 +402,7 @@ export default function ScanPage() {
 function DesktopCamera({
   videoRef, canvasRef, status, detected, flash, torchSupported,
   onToggleFlash, onGallery, onRetry, fileInputRef, onFileChange,
+  cameraPreferenceEnabled, onOpenAccessSettings,
 }: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -388,6 +415,8 @@ function DesktopCamera({
   onRetry: () => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  cameraPreferenceEnabled: boolean;
+  onOpenAccessSettings: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -404,6 +433,25 @@ function DesktopCamera({
         />
         <canvas ref={canvasRef} className="hidden" />
 
+        {status === 'idle' && !cameraPreferenceEnabled && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-white">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/10">
+              <ShieldCheck size={24} className="text-white/80" />
+            </div>
+            <p className="mt-4 text-sm font-semibold">Camera follows your web access preference</p>
+            <p className="mt-2 text-xs leading-relaxed text-white/65">
+              Enable camera to start scanning automatically from this page, or switch to manual code entry.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={onRetry} className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-primary-900">
+                Enable camera
+              </button>
+              <button onClick={onOpenAccessSettings} className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white">
+                Access settings
+              </button>
+            </div>
+          </div>
+        )}
         {status === 'requesting' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3">
             <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -417,9 +465,14 @@ function DesktopCamera({
               {status === 'denied' ? 'Camera blocked. Allow in browser settings.' : 'Camera not supported.'}
             </p>
             {status === 'denied' && (
-              <button onClick={onRetry} className="text-xs bg-white/20 px-4 py-1.5 rounded-full text-white">
-                Try Again
-              </button>
+              <div className="flex gap-2">
+                <button onClick={onRetry} className="text-xs bg-white/20 px-4 py-1.5 rounded-full text-white">
+                  Try Again
+                </button>
+                <button onClick={onOpenAccessSettings} className="text-xs bg-white/10 border border-white/20 px-4 py-1.5 rounded-full text-white">
+                  Access settings
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -447,7 +500,9 @@ function DesktopCamera({
       </div>
 
       <p className="text-white/60 text-xs text-center">
-        Point your webcam at the QR code on the dispenser
+        {cameraPreferenceEnabled
+          ? 'Point your webcam at the QR code on the dispenser'
+          : 'Turn camera on or use manual code entry'}
       </p>
 
       {/* Buttons */}
@@ -479,6 +534,42 @@ function DesktopCamera({
         className="hidden"
         onChange={onFileChange}
       />
+    </div>
+  );
+}
+
+function PermissionGate({
+  title,
+  body,
+  primaryLabel,
+  secondaryLabel,
+  onPrimary,
+  onSecondary,
+}: {
+  title: string;
+  body: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+  onPrimary: () => void;
+  onSecondary: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center text-white">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/10">
+        <ShieldCheck size={28} className="text-white/80" />
+      </div>
+      <div>
+        <p className="text-base font-semibold">{title}</p>
+        <p className="mt-2 text-sm leading-relaxed text-white/65">{body}</p>
+      </div>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button onClick={onPrimary} className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-primary-900">
+          {primaryLabel}
+        </button>
+        <button onClick={onSecondary} className="rounded-full border border-white/20 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white">
+          {secondaryLabel}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,9 +1,10 @@
 'use client';
 import Link from 'next/link';
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Compass, QrCode, BarChart2, User } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
+import { Suspense } from 'react';
 
 const navItems = [
   { href: '/explore', label: 'Explore', icon: Compass },
@@ -16,9 +17,13 @@ function getInitials(name: string) {
   return name.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-export default function SidebarNav() {
+function SidebarNavContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const guest = useAppStore((s) => s.guest);
+  const isTabletMode = searchParams.get('mode') === 'tablet';
+
+  if (isTabletMode) return null;
 
   return (
     <aside className="hidden md:flex flex-col fixed left-0 top-0 h-full w-60 bg-white border-r border-slate-200 z-40">
@@ -65,3 +70,10 @@ export default function SidebarNav() {
   );
 }
 
+export default function SidebarNav() {
+  return (
+    <Suspense fallback={null}>
+      <SidebarNavContent />
+    </Suspense>
+  );
+}
