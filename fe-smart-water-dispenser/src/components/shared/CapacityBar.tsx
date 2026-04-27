@@ -19,7 +19,7 @@ export default function CapacityBar({ capacity, status }: Props) {
     : 'bg-status-unavailable';
 
   const label = status === 'unavailable' ? 'Unavailable'
-    : `${capacity}% Full`;
+    : `${capacity}% Fill`;
 
   const textColor = status === 'available' ? 'text-green-600'
     : status === 'partial' ? 'text-amber-600'

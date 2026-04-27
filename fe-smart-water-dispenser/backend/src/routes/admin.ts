@@ -42,6 +42,62 @@ const machineActionSchema = z.object({
 });
 
 export async function registerAdminRoutes(app: FastifyInstance, services: AppServices) {
+  async function cancelTransactionById(transactionId: string, adminUserId: string) {
+    const db = services.dbClient.db as any;
+    const [transaction] = await db.select().from(transactions).where(eq(transactions.id, transactionId)).limit(1);
+    if (!transaction) {
+      return { ok: false as const, status: 404, code: "NOT_FOUND", message: "Transaction not found" };
+    }
+
+    if (["COMPLETED", "CANCELLED", "FAILED"].includes(transaction.dispenseStatus)) {
+      return { ok: false as const, status: 409, code: "INVALID_STATE", message: "Transaction cannot be cancelled" };
+    }
+
+    const [machine] = await db.select().from(machines).where(eq(machines.id, transaction.machineId)).limit(1);
+
+    await db
+      .update(transactions)
+      .set({
+        dispenseStatus: "CANCELLED",
+        completedAt: new Date(),
+      })
+      .where(eq(transactions.id, transaction.id));
+
+    await db
+      .update(dispenseSessions)
+      .set({
+        endedAt: new Date(),
+        resultStatus: "CANCELLED",
+      })
+      .where(eq(dispenseSessions.transactionId, transaction.id));
+
+    await appendTransactionState(services, transaction.id, "CANCELLED", "ADMIN", adminUserId, transaction.dispenseStatus);
+
+    if (machine) {
+      await publishMachineCommand(services, {
+        machineId: machine.id,
+        machineCode: machine.machineCode,
+        transactionId: transaction.id,
+        adminUserId,
+        commandType: "CANCEL_ORDER",
+        payload: {
+          transactionId: transaction.id,
+        },
+      });
+    }
+
+    await db.insert(auditLogs).values({
+      id: randomUUID(),
+      adminUserId,
+      action: "CANCEL_TRANSACTION",
+      targetType: "transaction",
+      targetId: transaction.id,
+      afterData: jsonStringify({ dispenseStatus: "CANCELLED" }),
+    });
+
+    return { ok: true as const, transactionId: transaction.id };
+  }
+
   app.post("/api/admin/auth/login", async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
@@ -187,6 +243,19 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
     return ok(reply, { reconciled: true, status: verified.transactionStatus });
   });
 
+  app.post("/api/admin/transactions/:transactionId/cancel", async (request, reply) => {
+    const auth = await getAdminAuth(request, services);
+    if (!auth) return fail(reply, 401, "UNAUTHENTICATED", "Admin session not found");
+
+    const { transactionId } = request.params as { transactionId: string };
+    const result = await cancelTransactionById(transactionId, auth.user.id);
+    if (!result.ok) {
+      return fail(reply, result.status, result.code, result.message);
+    }
+
+    return ok(reply, { cancelled: true, transactionId: result.transactionId });
+  });
+
   app.get("/api/admin/machines", async (request, reply) => {
     const auth = await getAdminAuth(request, services);
     if (!auth) return fail(reply, 401, "UNAUTHENTICATED", "Admin session not found");
@@ -279,23 +348,10 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
     if (parsed.data.action === "CANCEL_ACTIVE_TRANSACTION") {
       const active = await getActiveMachineTransaction(services, machine.id);
       if (active) {
-        await db
-          .update(transactions)
-          .set({
-            dispenseStatus: "CANCELLED",
-          })
-          .where(eq(transactions.id, active.id));
-        await appendTransactionState(services, active.id, "CANCELLED", "ADMIN", auth.user.id, active.dispenseStatus);
-        await publishMachineCommand(services, {
-          machineId: machine.id,
-          machineCode: machine.machineCode,
-          transactionId: active.id,
-          adminUserId: auth.user.id,
-          commandType: "CANCEL_ORDER",
-          payload: {
-            transactionId: active.id,
-          },
-        });
+        const result = await cancelTransactionById(active.id, auth.user.id);
+        if (!result.ok) {
+          return fail(reply, result.status, result.code, result.message);
+        }
       }
     }
 

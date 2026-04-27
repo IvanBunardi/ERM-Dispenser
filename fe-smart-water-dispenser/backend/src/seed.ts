@@ -13,11 +13,23 @@ import {
   sites,
 } from "./db/schema.js";
 
+const curatedMachineImages: Record<string, string> = {
+  "VM-001": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2019/09/Auditorium-bsd-Universitas-prasetiya-mulya.png",
+  "VM-004": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2019/09/Gedung-eka-tjipta-widjaja-Universitas-Prasetiya-Mulya.jpg",
+};
+
 export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) {
   const db = dbClient.db;
   const existingMachines = await db.select({ value: count() }).from(machines);
 
   if ((existingMachines[0]?.value ?? 0) > 0) {
+    for (const [machineCode, imageUrl] of Object.entries(curatedMachineImages)) {
+      await db
+        .update(machines)
+        .set({ imageUrl })
+        .where(eq(machines.machineCode, machineCode));
+    }
+
     return;
   }
 
@@ -72,7 +84,7 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
         shortCode: "123456",
         siteId: insertedSites[0].id,
         displayName: "AUDITORIUM PRASMUL",
-        imageUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=120&h=120&fit=crop",
+        imageUrl: curatedMachineImages["VM-001"],
         isVerified: true,
         firmwareVersion: "sim-1.0.0",
         connectivityStatus: "ONLINE",
@@ -111,7 +123,7 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
         shortCode: "445566",
         siteId: insertedSites[3].id,
         displayName: "KANTIN UTAMA",
-        imageUrl: "https://images.unsplash.com/photo-1523413651479-59cb1f1f6f18?w=120&h=120&fit=crop",
+        imageUrl: curatedMachineImages["VM-004"],
         isVerified: true,
         firmwareVersion: "sim-1.0.0",
         connectivityStatus: "ONLINE",

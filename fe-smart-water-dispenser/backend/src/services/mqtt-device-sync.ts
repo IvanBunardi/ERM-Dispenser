@@ -1,5 +1,11 @@
-import { eq } from "drizzle-orm";
-import { appendTransactionState, applyDeviceEvent, updateCustomerImpact } from "../lib/domain.js";
+import { randomUUID } from "node:crypto";
+import { desc, eq } from "drizzle-orm";
+import {
+  appendTransactionState,
+  applyDeviceEvent,
+  ensureMachineWaitPaymentTransaction,
+  updateCustomerImpact,
+} from "../lib/domain.js";
 import { machineStatusSnapshots, machines, transactions, dispenseSessions } from "../db/schema.js";
 import type { AppServices } from "../types.js";
 import type { IncomingMqttMessage, MqttProvider } from "./mqtt.js";
@@ -8,11 +14,15 @@ type TelemetryPayload = {
   machineId: string;
   transactionId: string | null;
   state: string | null;
-  bottleDetected: boolean;
-  pumpRunning: boolean;
-  filledMl: number;
+  source: string | null;
+  tankLevelPct: number | null;
+  bottleDetected: boolean | null;
+  pumpRunning: boolean | null;
+  filledMl: number | null;
   flowRateLpm: number | null;
   error: string | null;
+  targetVolumeMl: number | null;
+  amount: number | null;
 };
 
 const STATE_TO_DISPENSE_STATUS: Record<string, string> = {
@@ -45,6 +55,21 @@ function parseJsonPayload(payload: string) {
   }
 }
 
+function asNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
 function toTelemetryPayload(machineCode: string, payload: Record<string, unknown>): TelemetryPayload {
   const transactionId = typeof payload.transactionId === "string" && payload.transactionId.length > 0
     ? payload.transactionId
@@ -56,11 +81,15 @@ function toTelemetryPayload(machineCode: string, payload: Record<string, unknown
       : machineCode,
     transactionId,
     state: typeof payload.state === "string" ? payload.state : null,
-    bottleDetected: Boolean(payload.bottleDetected),
-    pumpRunning: Boolean(payload.pumpRunning),
-    filledMl: typeof payload.filledMl === "number" ? payload.filledMl : 0,
-    flowRateLpm: typeof payload.flowRateLpm === "number" ? payload.flowRateLpm : null,
+    source: typeof payload.source === "string" && payload.source.length > 0 ? payload.source : null,
+    tankLevelPct: asNumber(payload.tankLevelPct ?? payload.tankLevelPercent),
+    bottleDetected: typeof payload.bottleDetected === "boolean" ? payload.bottleDetected : null,
+    pumpRunning: typeof payload.pumpRunning === "boolean" ? payload.pumpRunning : null,
+    filledMl: asNumber(payload.filledMl),
+    flowRateLpm: asNumber(payload.flowRateLpm),
     error: typeof payload.error === "string" && payload.error.length > 0 ? payload.error : null,
+    targetVolumeMl: asNumber(payload.targetVolumeMl ?? payload.volumeMl),
+    amount: asNumber(payload.amount),
   };
 }
 
@@ -89,29 +118,61 @@ async function ingestTelemetrySnapshot(
   const machine = await findMachineByCode(services, machineCode);
   if (!machine) return;
 
+  const [latestSnapshot] = await db
+    .select()
+    .from(machineStatusSnapshots)
+    .where(eq(machineStatusSnapshots.machineId, machine.id))
+    .orderBy(desc(machineStatusSnapshots.reportedAt))
+    .limit(1);
+
+  const resolvedState = telemetry.state ?? latestSnapshot?.state ?? channel.toUpperCase();
+  const resolvedSource = telemetry.source ?? latestSnapshot?.source ?? `MQTT_${channel.toUpperCase()}`;
+  const resolvedTankLevelPct = telemetry.tankLevelPct ?? latestSnapshot?.tankLevelPct ?? null;
+  const resolvedBottleDetected = telemetry.bottleDetected ?? latestSnapshot?.bottleDetected ?? false;
+  const resolvedPumpRunning = telemetry.pumpRunning ?? latestSnapshot?.pumpRunning ?? false;
+  const resolvedFilledMl = telemetry.filledMl ?? latestSnapshot?.filledMl ?? 0;
+  const resolvedFlowRateLpm = telemetry.flowRateLpm ?? asNumber(latestSnapshot?.flowRateLpm);
+
+  if (
+    resolvedState === "WAIT_PAYMENT" &&
+    telemetry.targetVolumeMl !== null &&
+    telemetry.targetVolumeMl > 0 &&
+    telemetry.amount !== null &&
+    telemetry.amount > 0
+  ) {
+    await ensureMachineWaitPaymentTransaction(services, {
+      machineCode,
+      volumeMl: Math.round(telemetry.targetVolumeMl),
+      grossAmount: Math.round(telemetry.amount),
+      sourceChannel: "IOT_TABLET_SYNC",
+    });
+  }
+
   await db.insert(machineStatusSnapshots).values({
+    id: randomUUID(),
     machineId: machine.id,
-    state: telemetry.state ?? channel.toUpperCase(),
-    bottleDetected: telemetry.bottleDetected,
-    pumpRunning: telemetry.pumpRunning,
-    filledMl: telemetry.filledMl,
-    flowRateLpm: telemetry.flowRateLpm !== null ? String(telemetry.flowRateLpm) : null,
-    source: `MQTT_${channel.toUpperCase()}`,
+    state: resolvedState,
+    tankLevelPct: resolvedTankLevelPct !== null ? Math.round(resolvedTankLevelPct) : null,
+    bottleDetected: resolvedBottleDetected,
+    pumpRunning: resolvedPumpRunning,
+    filledMl: Math.round(resolvedFilledMl),
+    flowRateLpm: resolvedFlowRateLpm !== null ? String(resolvedFlowRateLpm) : null,
+    source: resolvedSource,
   });
 
   await db
     .update(machines)
     .set({
       connectivityStatus: "ONLINE",
-      operationStatus: mapOperationStatus(telemetry.state, telemetry.pumpRunning),
+      operationStatus: mapOperationStatus(resolvedState, resolvedPumpRunning),
       lastSeenAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(machines.id, machine.id));
 
-  if (!telemetry.transactionId || !telemetry.state) return;
+  if (!telemetry.transactionId || !resolvedState) return;
 
-  const nextDispenseStatus = STATE_TO_DISPENSE_STATUS[telemetry.state];
+  const nextDispenseStatus = STATE_TO_DISPENSE_STATUS[resolvedState];
   if (!nextDispenseStatus) return;
 
   const [transaction] = await db
@@ -120,6 +181,11 @@ async function ingestTelemetrySnapshot(
     .where(eq(transactions.id, telemetry.transactionId))
     .limit(1);
   if (!transaction || transaction.machineId !== machine.id || transaction.dispenseStatus === nextDispenseStatus) {
+    return;
+  }
+
+  const requiresPaidState = ["WAITING_BOTTLE", "READY_TO_FILL", "FILLING", "COMPLETED"].includes(nextDispenseStatus);
+  if (requiresPaidState && transaction.paymentStatus !== "PAID") {
     return;
   }
 
@@ -150,8 +216,8 @@ async function ingestTelemetrySnapshot(
     await db
       .update(dispenseSessions)
       .set({
-        actualFilledMl: telemetry.filledMl > 0 ? telemetry.filledMl : transaction.volumeMl,
-        averageFlowRateLpm: telemetry.flowRateLpm !== null ? String(telemetry.flowRateLpm) : null,
+        actualFilledMl: resolvedFilledMl > 0 ? resolvedFilledMl : transaction.volumeMl,
+        averageFlowRateLpm: resolvedFlowRateLpm !== null ? String(resolvedFlowRateLpm) : null,
         endedAt: new Date(),
         resultStatus: "COMPLETED",
       })
@@ -161,7 +227,7 @@ async function ingestTelemetrySnapshot(
       services,
       transaction.guestUserId,
       transaction.grossAmount,
-      telemetry.filledMl > 0 ? telemetry.filledMl : transaction.volumeMl,
+      resolvedFilledMl > 0 ? resolvedFilledMl : transaction.volumeMl,
     );
   }
 
@@ -183,9 +249,11 @@ async function ingestTelemetrySnapshot(
     machineCode,
     transaction.dispenseStatus,
     {
-      state: telemetry.state,
-      flowRateLpm: telemetry.flowRateLpm,
-      filledMl: telemetry.filledMl,
+      state: resolvedState,
+      flowRateLpm: resolvedFlowRateLpm,
+      filledMl: resolvedFilledMl,
+      tankLevelPct: resolvedTankLevelPct,
+      source: resolvedSource,
     },
   );
 }
@@ -233,15 +301,17 @@ async function ingestEvent(
     payload: {
       ...payload,
       state: telemetry.state,
+      source: telemetry.source,
+      tankLevelPct: telemetry.tankLevelPct,
       bottleDetected: telemetry.bottleDetected,
       pumpRunning: telemetry.pumpRunning,
-      filledMl: telemetry.filledMl,
+      filledMl: telemetry.filledMl ?? 0,
       flowRateLpm: telemetry.flowRateLpm,
     },
   });
 }
 
-async function handleInboundMqttMessage(services: AppServices, message: IncomingMqttMessage) {
+export async function handleInboundMqttMessage(services: AppServices, message: IncomingMqttMessage) {
   const parsedTopic = parseTopic(message.topic);
   if (!parsedTopic) return;
 

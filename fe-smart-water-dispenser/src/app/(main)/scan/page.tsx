@@ -170,7 +170,7 @@ export default function ScanPage() {
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (code.trim().length < 4) { setCodeError('Min. 4 characters'); return; }
-    router.push(`/scan/result?code=${code.trim().toUpperCase()}`);
+    router.push(`/scan/result?code=${code.trim().toUpperCase()}&mode=tablet`);
   };
 
   return (

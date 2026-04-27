@@ -12,7 +12,13 @@ import {
   machineStatusSnapshots,
 } from "../db/schema.js";
 import { getGuestAuth } from "../lib/auth.js";
-import { createTransactionWithPayment, getActiveMachineTransaction } from "../lib/domain.js";
+import {
+  appendTransactionState,
+  createTabletKioskTransaction,
+  createTransactionWithPayment,
+  getActiveMachineTransaction,
+  publishMachineCommand,
+} from "../lib/domain.js";
 import { fail, ok } from "../lib/http.js";
 
 const transactionSchema = z.object({
@@ -109,6 +115,8 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
   app.get("/api/customer/machines/:machineId", async (request, reply) => {
     const db = services.dbClient.db as any;
     const auth = await getGuestAuth(request, services);
+    const query = request.query as { mode?: string } | undefined;
+    const isTabletMode = query?.mode === "tablet";
     const { machineId } = request.params as { machineId: string };
     const [machine] = await db.select().from(machines).where(eq(machines.machineCode, machineId)).limit(1);
     if (!machine) {
@@ -130,7 +138,8 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
     const resumableTransaction = activeTransaction?.guestUserId && guestUserId && activeTransaction.guestUserId === guestUserId
       ? activeTransaction
       : null;
-    const busyState = activeTransaction && !resumableTransaction
+    const visibleTransaction = isTabletMode ? activeTransaction : resumableTransaction;
+    const busyState = activeTransaction && !visibleTransaction
       ? activeTransaction.dispenseStatus
       : null;
 
@@ -138,7 +147,7 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
       machine,
       volumeOptions,
       status,
-      activeTransaction: resumableTransaction,
+      activeTransaction: visibleTransaction,
       busyState,
     });
   });
@@ -146,6 +155,57 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
   app.post("/api/customer/transactions", async (request, reply) => {
     const auth = await getGuestAuth(request, services);
     return createMachineTransaction(request.body, auth?.user.id ?? null, reply);
+  });
+
+  app.post("/api/customer/machines/:machineId/tablet-transaction", async (request, reply) => {
+    const db = services.dbClient.db as any;
+    const auth = await getGuestAuth(request, services);
+    const { machineId } = request.params as { machineId: string };
+    const parsed = z.object({ volumeMl: z.number().int().positive() }).safeParse(request.body);
+    if (!parsed.success) {
+      return fail(reply, 400, "BAD_REQUEST", "Invalid tablet transaction payload");
+    }
+
+    try {
+      const result = await createTabletKioskTransaction(services, {
+        machineCode: machineId,
+        volumeMl: parsed.data.volumeMl,
+        guestUserId: auth?.user.id ?? null,
+      });
+
+      const [machine] = await db.select().from(machines).where(eq(machines.machineCode, machineId)).limit(1);
+      if (!machine) {
+        return fail(reply, 404, "NOT_FOUND", "Machine not found");
+      }
+
+      return ok(reply, {
+        transactionId: result.transactionId,
+        orderId: result.orderId,
+        paymentStatus: "PENDING",
+        dispenseStatus: "WAITING_PAYMENT",
+        machine: {
+          id: machine.id,
+          machineCode: machine.machineCode,
+          displayName: machine.displayName,
+        },
+        payment: {
+          provider: "midtrans",
+          paymentType: result.payment.paymentType,
+          qrString: result.payment.qrString,
+          qrUrl: result.payment.qrUrl,
+          expiresAt: result.payment.expiresAt,
+        },
+      }, result.created ? 201 : 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create tablet transaction";
+      if (message.includes("not found")) {
+        return fail(reply, 404, "NOT_FOUND", message);
+      }
+      if (message.includes("not available")) {
+        return fail(reply, 400, "INVALID_VOLUME", message);
+      }
+      return fail(reply, 500, "SERVER_ERROR", message);
+    }
   });
 
   app.get("/api/customer/transactions/:transactionId", async (request, reply) => {
@@ -192,12 +252,49 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
       return fail(reply, 404, "NOT_FOUND", "Transaction not found");
     }
 
+    const [machine] = await db.select().from(machines).where(eq(machines.id, transaction.machineId)).limit(1);
+    if (!machine) {
+      return fail(reply, 404, "NOT_FOUND", "Machine not found");
+    }
+
     await db
       .update(transactions)
       .set({
         dispenseStatus: "CANCELLED",
+        completedAt: new Date(),
       })
       .where(eq(transactions.id, transactionId));
+
+    await db
+      .update(dispenseSessions)
+      .set({
+        endedAt: new Date(),
+        resultStatus: "CANCELLED",
+      })
+      .where(eq(dispenseSessions.transactionId, transaction.id));
+
+    await appendTransactionState(
+      services,
+      transaction.id,
+      "CANCELLED",
+      "CUSTOMER",
+      machine.machineCode,
+      transaction.dispenseStatus,
+      {
+        origin: "TABLET_CANCEL",
+        sourceChannel: transaction.sourceChannel,
+      },
+    );
+
+    await publishMachineCommand(services, {
+      machineId: machine.id,
+      machineCode: machine.machineCode,
+      transactionId: transaction.id,
+      commandType: "CANCEL_ORDER",
+      payload: transaction.sourceChannel === "IOT_TABLET_SYNC"
+        ? {}
+        : { transactionId: transaction.id },
+    });
 
     return ok(reply, { cancelled: true });
   });

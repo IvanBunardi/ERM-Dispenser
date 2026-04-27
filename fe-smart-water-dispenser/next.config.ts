@@ -6,7 +6,12 @@ const nextConfig: NextConfig = {
   },
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'images.unsplash.com' },
+      { protocol: "https", hostname: "images.unsplash.com" },
+      {
+        protocol: "https",
+        hostname: "www.prasetiyamulya.ac.id",
+        pathname: "/wp-content/uploads/**",
+      },
     ],
   },
   async rewrites() {

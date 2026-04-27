@@ -25,7 +25,11 @@ interface MachineEvent {
 interface Machine {
   id: string; machineCode: string; displayName: string; operationStatus: string
   latestStatus?: { tankLevelPct: number; waterTempC: number; flowRateMlS: number; pressureBar: number; reportedAt: string } | null
-  activeTransaction?: unknown
+  activeTransaction?: {
+    id: string
+    paymentStatus: string
+    dispenseStatus: string
+  } | null
 }
 interface EnvReport {
   waterDistributedLiters: number
@@ -36,6 +40,17 @@ interface EnvReport {
 }
 
 type TabId = 'dashboard' | 'riwayat' | 'kontrol' | 'lingkungan'
+
+function formatIoTLogTimestamp(value: string) {
+  return new Date(value).toLocaleString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
 
 // ── Login Form ──
 function LoginForm({ onLogin }: { onLogin: (admin: AdminUser) => void }) {
@@ -101,6 +116,7 @@ export default function AdminDashboard() {
   const [envReport, setEnvReport] = useState<EnvReport | null>(null)
   const [actionLoading, setActionLoading] = useState('')
   const [actionMsg, setActionMsg] = useState('')
+  const [cancelLoadingId, setCancelLoadingId] = useState('')
 
   // Check existing admin session
   useEffect(() => {
@@ -171,6 +187,27 @@ export default function AdminDashboard() {
     if (s === 'sukses' || s === 'normal' || s === 'paid' || s === 'completed' || s === 'settlement') return 'badge badge-success'
     if (s === 'pending' || s === 'warning' || s === 'pending_payment' || s === 'payment_pending') return 'badge badge-pending'
     return 'badge badge-cancel'
+  }
+
+  const canCancelTransaction = (dispenseStatus: string) => !['COMPLETED', 'CANCELLED', 'FAILED'].includes(dispenseStatus)
+
+  const handleCancelTransaction = async (transactionId: string) => {
+    setCancelLoadingId(transactionId)
+    setActionMsg('')
+    try {
+      await api.post(`/api/admin/transactions/${transactionId}/cancel`)
+      setActionMsg('✓ transaksi berhasil dibatalkan')
+      await Promise.all([loadDashboard(), loadMachines()])
+      if (selectedMachineId) {
+        const logs = await api.get<MachineEvent[]>(`/api/admin/machines/${selectedMachineId}/logs`).catch(() => [])
+        setMachineLogs(Array.isArray(logs) ? logs : [])
+      }
+    } catch (err) {
+      setActionMsg(`✗ ${err instanceof ApiError ? err.message : 'Gagal membatalkan transaksi'}`)
+    } finally {
+      setCancelLoadingId('')
+      setTimeout(() => setActionMsg(''), 3000)
+    }
   }
 
   const tabs: { id: TabId; label: string }[] = [
@@ -255,7 +292,7 @@ export default function AdminDashboard() {
               <div className="table-title">5 Transaksi Terakhir</div>
               <div className="table-wrapper">
                 <table>
-                  <thead><tr><th>ID Transaksi</th><th>Waktu</th><th>Volume Air</th><th>Total Bayar</th><th>Status</th></tr></thead>
+                  <thead><tr><th>ID Transaksi</th><th>Waktu</th><th>Volume Air</th><th>Total Bayar</th><th>Status</th><th>Aksi</th></tr></thead>
                   <tbody>
                     {transactions.slice(0, 5).map((t) => (
                       <tr key={t.transaction.id}>
@@ -264,9 +301,22 @@ export default function AdminDashboard() {
                         <td>{t.transaction.volumeMl} ml</td>
                         <td style={{ fontWeight: 600 }}>Rp {t.transaction.grossAmount?.toLocaleString('id-ID')}</td>
                         <td><span className={badgeClass(t.transaction.paymentStatus)}>{t.transaction.paymentStatus}</span></td>
+                        <td>
+                          {canCancelTransaction(t.transaction.dispenseStatus) ? (
+                            <button
+                              onClick={() => handleCancelTransaction(t.transaction.id)}
+                              disabled={cancelLoadingId === t.transaction.id}
+                              style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 700, fontFamily: 'Montserrat', cursor: 'pointer', opacity: cancelLoadingId === t.transaction.id ? 0.6 : 1 }}
+                            >
+                              {cancelLoadingId === t.transaction.id ? 'Cancelling...' : 'Cancel'}
+                            </button>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
-                    {transactions.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>Belum ada transaksi</td></tr>}
+                    {transactions.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>Belum ada transaksi</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -291,6 +341,17 @@ export default function AdminDashboard() {
               <div className="iot-card"><div className="iot-card-title">Log Entries</div><div className="iot-card-value">{machineLogs.length}</div></div>
               <div className="iot-card"><div className="iot-card-title">Transaksi Aktif</div><div className="iot-card-value orange">{selectedMachine?.activeTransaction ? 'Ada' : 'Tidak Ada'}</div></div>
             </div>
+            {selectedMachine?.activeTransaction && canCancelTransaction(selectedMachine.activeTransaction.dispenseStatus) && (
+              <div style={{ marginBottom: 16 }}>
+                <button
+                  onClick={() => handleCancelTransaction(selectedMachine.activeTransaction!.id)}
+                  disabled={cancelLoadingId === selectedMachine.activeTransaction.id}
+                  style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 10, padding: '10px 16px', fontSize: 13, fontWeight: 700, fontFamily: 'Montserrat', cursor: 'pointer', opacity: cancelLoadingId === selectedMachine.activeTransaction.id ? 0.6 : 1 }}
+                >
+                  {cancelLoadingId === selectedMachine.activeTransaction.id ? 'Cancelling active transaction...' : 'Cancel Transaksi Aktif'}
+                </button>
+              </div>
+            )}
             <div className="table-card">
               <div className="table-title">Log IoT Terkini</div>
               <div className="table-wrapper">
@@ -299,7 +360,7 @@ export default function AdminDashboard() {
                   <tbody>
                     {machineLogs.slice(0, 20).map((log, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'monospace', color: '#2563EB', fontWeight: 600 }}>{new Date(log.occurredAt).toLocaleTimeString('id-ID')}</td>
+                        <td style={{ fontFamily: 'monospace', color: '#2563EB', fontWeight: 600 }}>{formatIoTLogTimestamp(log.occurredAt)}</td>
                         <td>{log.eventType}</td>
                         <td>{log.machineId?.slice(0, 8)}…</td>
                         <td><span className="badge badge-success">OK</span></td>

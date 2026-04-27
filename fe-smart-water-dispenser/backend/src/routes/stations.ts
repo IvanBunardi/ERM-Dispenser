@@ -1,9 +1,14 @@
 import { desc, eq, or } from "drizzle-orm";
+import type { InferSelectModel } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppServices } from "../types.js";
 import { machineStatusSnapshots, machineVolumeOptions, machines, sites } from "../db/schema.js";
 import { fail, ok } from "../lib/http.js";
 import { calculateDistanceMeters, formatDistanceLabel } from "../lib/utils.js";
+
+type MachineRow = InferSelectModel<typeof machines>;
+type SiteRow = InferSelectModel<typeof sites>;
+type MachineStatusRow = InferSelectModel<typeof machineStatusSnapshots>;
 
 function mapCapacityToStatus(capacityPct: number) {
   if (capacityPct <= 0) return "unavailable";
@@ -26,19 +31,19 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
     ]);
 
     // Use Maps for O(1) lookup
-    const siteMap = new Map(siteRows.map((s: any) => [s.id, s]));
+    const siteMap = new Map<string, SiteRow>(siteRows.map((site: SiteRow) => [site.id, site]));
     
     // Only keep the latest status per machine
-    const latestStatusMap = new Map();
-    for (const s of allStatusRows) {
-      if (!latestStatusMap.has(s.machineId)) {
-        latestStatusMap.set(s.machineId, s);
+    const latestStatusMap = new Map<string, MachineStatusRow>();
+    for (const row of allStatusRows as MachineStatusRow[]) {
+      if (!latestStatusMap.has(row.machineId)) {
+        latestStatusMap.set(row.machineId, row);
       }
     }
 
     const stationRows = machineRows
-      .map((machine: any) => {
-        const site = siteMap.get(machine.siteId);
+      .map((machine: MachineRow) => {
+        const site = machine.siteId ? siteMap.get(machine.siteId) : undefined;
         const latestStatus = latestStatusMap.get(machine.id);
         const distanceMeters = calculateDistanceMeters(
           lat,

@@ -90,6 +90,11 @@ interface MachineLookupResponse {
   } | null;
 }
 
+function getMachineLookupPath(machineCode: string, isTabletMode: boolean) {
+  const query = isTabletMode ? "?mode=tablet" : "";
+  return `/api/customer/machines/${machineCode}${query}`;
+}
+
 function getDeviceStage(snapshot: TransactionSnapshot | null): DeviceStage {
   const status = snapshot?.transaction.dispenseStatus;
   if (status === 'WAITING_BOTTLE') return 'WAITING_BOTTLE';
@@ -273,7 +278,7 @@ function ScanResultContent() {
     api.post<{ machine: MachineInfo }>('/api/scan/verify', { code })
       .then(async (res) => {
         setMachine(res.machine);
-        const machineRes = await api.get<MachineLookupResponse>(`/api/customer/machines/${res.machine.machineCode}`);
+        const machineRes = await api.get<MachineLookupResponse>(getMachineLookupPath(res.machine.machineCode, isTabletMode));
         const activeOptions = (machineRes.volumeOptions ?? []).filter((v) => v.isActive);
         setVolumeOptions(activeOptions);
         const activeTransaction = machineRes.activeTransaction;
@@ -288,8 +293,8 @@ function ScanResultContent() {
             ? machineRes.busyState
             : typeof machineRes.status?.state === 'string' && machineRes.status.state.length > 0
               ? machineRes.status.state
-            : null;
-        setMachineBusyState(reportedState && reportedState !== 'IDLE' ? reportedState : null);
+              : null;
+        setMachineBusyState(isTabletMode ? null : (reportedState && reportedState !== 'IDLE' ? reportedState : null));
         setPageState('ready');
       })
       .catch((err: unknown) => {
@@ -314,7 +319,7 @@ function ScanResultContent() {
       }>('/api/customer/transactions', {
         machineCode: machine.machineCode,
         volumeMl: vol.volumeMl,
-        sourceChannel: 'CUSTOMER_APP',
+        sourceChannel: isTabletMode ? 'TABLET_KIOSK' : 'CUSTOMER_APP',
       });
 
       const initialSnapshot: TransactionSnapshot = {
@@ -362,7 +367,7 @@ function ScanResultContent() {
 
     const syncMachineStatus = async () => {
       try {
-        const machineRes = await api.get<MachineLookupResponse>(`/api/customer/machines/${machine.machineCode}`);
+        const machineRes = await api.get<MachineLookupResponse>(getMachineLookupPath(machine.machineCode, isTabletMode));
         const activeOptions = (machineRes.volumeOptions ?? []).filter((v) => v.isActive);
         if (activeOptions.length > 0) {
           setVolumeOptions(activeOptions);
@@ -385,8 +390,8 @@ function ScanResultContent() {
             ? machineRes.busyState
             : typeof machineRes.status?.state === 'string' && machineRes.status.state.length > 0
               ? machineRes.status.state
-            : null;
-        setMachineBusyState(reportedState && reportedState !== 'IDLE' ? reportedState : null);
+              : null;
+        setMachineBusyState(isTabletMode ? null : (reportedState && reportedState !== 'IDLE' ? reportedState : null));
       } catch {
         // ignore machine watch errors
       }
@@ -601,6 +606,101 @@ function ScanResultContent() {
 
   const vol = volumeOptions[selectedIdx];
 
+  if (isTabletMode) {
+    return (
+      <div className="bg-slate-50 min-h-screen">
+        <div className="bg-white px-4 py-4 flex items-center gap-3 border-b border-slate-100">
+          <h1 className="text-base font-semibold text-slate-800">Tablet Payment Screen</h1>
+        </div>
+
+        <div className="max-w-md mx-auto px-4 py-6 space-y-6">
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center">
+                <Droplets size={24} className="text-primary-600" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Station</p>
+                <h3 className="font-bold text-slate-800">{machine?.displayName ?? code}</h3>
+                <p className="text-xs text-slate-400 font-mono">{machine?.machineCode}</p>
+              </div>
+              <div className="ml-auto">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-2 h-2 rounded-full ${machine?.status === 'available' ? 'bg-eco-500' : 'bg-amber-400'}`} />
+                  <span className="text-xs font-medium text-slate-600 capitalize">{machine?.status ?? 'Unknown'}</span>
+                </div>
+                <p className="text-xs text-slate-400 text-right mt-0.5">{machine?.capacityPct ?? 0}% Fill</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700 mb-3">Select Volume</h3>
+            {volumeOptions.length === 0 ? (
+              <div className="text-center py-6 text-slate-400 text-sm">No volume options available</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {volumeOptions.map((v, i) => (
+                  <button
+                    key={v.id}
+                    onClick={() => setSelectedIdx(i)}
+                    className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 ${
+                      selectedIdx === i
+                        ? 'border-primary-600 bg-primary-50'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <p className={`text-lg font-bold ${selectedIdx === i ? 'text-primary-800' : 'text-slate-700'}`}>
+                      {v.volumeMl}ml
+                    </p>
+                    <p className={`text-xs mt-0.5 ${selectedIdx === i ? 'text-primary-600' : 'text-slate-400'}`}>
+                      IDR {v.priceAmount.toLocaleString('id-ID')}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {vol && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Volume</span>
+                <span className="font-semibold text-slate-800">{vol.volumeMl}ml</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Price</span>
+                <span className="font-semibold text-slate-800">IDR {vol.priceAmount.toLocaleString('id-ID')}</span>
+              </div>
+              <div className="border-t border-slate-100 pt-3 flex justify-between text-sm">
+                <span className="text-slate-400 text-xs">Tablet QRIS</span>
+                <span className="text-xs text-slate-400">IoT will override if WAIT_PAYMENT arrives</span>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-[28px] border border-sky-100 bg-sky-50 p-5 shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">IoT Priority</p>
+            <p className="mt-2 text-sm leading-relaxed text-sky-900/80">
+              Tablet bisa memulai pembayaran dari sini. Tetapi jika IoT untuk <span className="font-semibold">{machine?.machineCode ?? code}</span>
+              masuk ke state <span className="font-semibold">WAIT_PAYMENT</span>, transaksi tablet akan dibatalkan dan layar ini otomatis
+              berpindah ke transaksi dari IoT.
+            </p>
+          </div>
+
+          <button
+            onClick={handleStart}
+            disabled={volumeOptions.length === 0 || !vol}
+            className="w-full bg-primary-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-primary-700 transition-colors disabled:opacity-40"
+          >
+            <Droplets size={18} />
+            Start Tablet Payment
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-slate-50">
       <div className="bg-white px-4 py-4 flex items-center gap-3 border-b border-slate-100">
@@ -613,16 +713,6 @@ function ScanResultContent() {
       </div>
 
         <div className="max-w-md mx-auto px-4 py-6 space-y-6">
-        {machineBusyState && (
-          <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">Machine Busy</p>
-            <h3 className="mt-2 text-base font-bold text-amber-950">Mesin sedang dipakai oleh sesi aktif di IoT</h3>
-            <p className="mt-2 text-sm leading-relaxed text-amber-900/80">
-              Status terakhir dari Wokwi adalah <span className="font-semibold">{machineBusyState}</span>. Order baru ditahan sampai sesi itu selesai, dan QR pembayaran tidak akan dibuka untuk transaksi milik guest lain.
-            </p>
-          </div>
-        )}
-
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center">
@@ -638,7 +728,7 @@ function ScanResultContent() {
                 <div className={`w-2 h-2 rounded-full ${machine?.status === 'available' ? 'bg-eco-500' : 'bg-amber-400'}`} />
                 <span className="text-xs font-medium text-slate-600 capitalize">{machine?.status ?? 'Unknown'}</span>
               </div>
-              <p className="text-xs text-slate-400 text-right mt-0.5">{machine?.capacityPct ?? 0}% Full</p>
+              <p className="text-xs text-slate-400 text-right mt-0.5">{machine?.capacityPct ?? 0}% Fill</p>
             </div>
           </div>
         </div>

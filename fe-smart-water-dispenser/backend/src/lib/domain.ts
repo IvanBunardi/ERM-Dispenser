@@ -115,6 +115,196 @@ export async function createTransactionWithPayment(
   };
 }
 
+export async function ensureMachineWaitPaymentTransaction(
+  services: AppServices,
+  input: {
+    machineCode: string;
+    volumeMl: number;
+    grossAmount: number;
+    sourceChannel: string;
+  },
+) {
+  const db = services.dbClient.db as any;
+  const [machine] = await db
+    .select()
+    .from(machines)
+    .where(eq(machines.machineCode, input.machineCode))
+    .limit(1);
+
+  if (!machine) {
+    return null;
+  }
+
+  const activeTransaction = await getActiveMachineTransaction(services, machine.id);
+  if (activeTransaction) {
+    if (activeTransaction.sourceChannel === "TABLET_KIOSK") {
+      await cancelTransactionForMachineOverride(services, activeTransaction.id, machine.machineCode, {
+        reason: "IOT_WAIT_PAYMENT_OVERRIDE",
+        replacementSource: input.sourceChannel,
+        volumeMl: input.volumeMl,
+        grossAmount: input.grossAmount,
+      });
+    } else {
+      return {
+        created: false,
+        transactionId: activeTransaction.id,
+        orderId: activeTransaction.orderId,
+      };
+    }
+  }
+
+  const result = await createTransactionWithPayment(services, {
+    guestUserId: null,
+    machineId: machine.id,
+    machineCode: machine.machineCode,
+    volumeMl: input.volumeMl,
+    grossAmount: input.grossAmount,
+    sourceChannel: input.sourceChannel,
+  });
+
+  return {
+    created: true,
+    transactionId: result.transactionId,
+    orderId: result.orderId,
+  };
+}
+
+export async function cancelTransactionForMachineOverride(
+  services: AppServices,
+  transactionId: string,
+  machineCode: string,
+  metadata?: Record<string, unknown>,
+) {
+  const db = services.dbClient.db as any;
+  const [transaction] = await db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.id, transactionId))
+    .limit(1);
+
+  if (!transaction || ["COMPLETED", "CANCELLED", "FAILED"].includes(transaction.dispenseStatus)) {
+    return false;
+  }
+
+  await db
+    .update(transactions)
+    .set({
+      dispenseStatus: "CANCELLED",
+      completedAt: new Date(),
+    })
+    .where(eq(transactions.id, transaction.id));
+
+  await db
+    .update(dispenseSessions)
+    .set({
+      endedAt: new Date(),
+      resultStatus: "CANCELLED",
+    })
+    .where(eq(dispenseSessions.transactionId, transaction.id));
+
+  await appendTransactionState(
+    services,
+    transaction.id,
+    "CANCELLED",
+    "SYSTEM",
+    machineCode,
+    transaction.dispenseStatus,
+    metadata,
+  );
+
+  return true;
+}
+
+export async function getMachineByCode(services: AppServices, machineCode: string) {
+  const db = services.dbClient.db as any;
+  const [machine] = await db
+    .select()
+    .from(machines)
+    .where(eq(machines.machineCode, machineCode))
+    .limit(1);
+
+  return machine ?? null;
+}
+
+export async function createTabletKioskTransaction(
+  services: AppServices,
+  input: {
+    machineCode: string;
+    volumeMl: number;
+    guestUserId?: string | null;
+  },
+) {
+  const db = services.dbClient.db as any;
+  const machine = await getMachineByCode(services, input.machineCode);
+  if (!machine) {
+    throw new Error(`Machine ${input.machineCode} not found`);
+  }
+
+  const activeTransaction = await getActiveMachineTransaction(services, machine.id);
+  if (activeTransaction) {
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.transactionId, activeTransaction.id))
+      .limit(1);
+
+    if (!payment) {
+      throw new Error(`Payment for active transaction ${activeTransaction.id} not found`);
+    }
+
+    return {
+      created: false,
+      transactionId: activeTransaction.id,
+      orderId: activeTransaction.orderId,
+      payment: {
+        paymentType: payment.paymentType,
+        qrString: payment.qrString,
+        qrUrl: payment.qrUrl,
+        expiresAt: payment.expiresAt?.toISOString() ?? null,
+      },
+      grossAmount: activeTransaction.grossAmount,
+    };
+  }
+
+  const [volumeOption] = await db
+    .select()
+    .from(machineVolumeOptions)
+    .where(
+      and(
+        eq(machineVolumeOptions.machineId, machine.id),
+        eq(machineVolumeOptions.volumeMl, input.volumeMl),
+        eq(machineVolumeOptions.isActive, true),
+      ),
+    )
+    .limit(1);
+
+  if (!volumeOption) {
+    throw new Error(`Volume ${input.volumeMl} is not available for ${input.machineCode}`);
+  }
+
+  const result = await createTransactionWithPayment(services, {
+    guestUserId: input.guestUserId ?? null,
+    machineId: machine.id,
+    machineCode: machine.machineCode,
+    volumeMl: input.volumeMl,
+    grossAmount: volumeOption.priceAmount,
+    sourceChannel: "TABLET_KIOSK",
+  });
+
+  return {
+    created: true,
+    transactionId: result.transactionId,
+    orderId: result.orderId,
+    payment: {
+      paymentType: result.payment.paymentType,
+      qrString: result.payment.qrString,
+      qrUrl: result.payment.qrUrl,
+      expiresAt: result.payment.expiresAt,
+    },
+    grossAmount: volumeOption.priceAmount,
+  };
+}
+
 export async function publishMachineCommand(
   services: AppServices,
   input: {
@@ -179,11 +369,17 @@ export async function applyDeviceEvent(
 
   const statusPayload = {
     state: typeof input.payload.state === "string" ? input.payload.state : null,
-    tankLevelPct: typeof input.payload.tankLevelPct === "number" ? input.payload.tankLevelPct : null,
+    tankLevelPct:
+      typeof input.payload.tankLevelPct === "number"
+        ? input.payload.tankLevelPct
+        : typeof input.payload.tankLevelPercent === "number"
+          ? input.payload.tankLevelPercent
+          : null,
     bottleDetected: typeof input.payload.bottleDetected === "boolean" ? input.payload.bottleDetected : false,
     pumpRunning: typeof input.payload.pumpRunning === "boolean" ? input.payload.pumpRunning : false,
     filledMl: typeof input.payload.filledMl === "number" ? input.payload.filledMl : 0,
     flowRateLpm: typeof input.payload.flowRateLpm === "number" ? String(input.payload.flowRateLpm) : "0.00",
+    source: typeof input.payload.source === "string" && input.payload.source.length > 0 ? input.payload.source : "DEVICE_EVENT",
   };
 
   await db.insert(machineStatusSnapshots).values({
@@ -195,7 +391,7 @@ export async function applyDeviceEvent(
     pumpRunning: statusPayload.pumpRunning,
     filledMl: statusPayload.filledMl,
     flowRateLpm: statusPayload.flowRateLpm,
-    source: "DEVICE_EVENT",
+    source: statusPayload.source,
   });
 
   await db
@@ -213,6 +409,11 @@ export async function applyDeviceEvent(
   const txRows = await db.select().from(transactions).where(eq(transactions.id, input.transactionId)).limit(1);
   const transaction = txRows[0];
   if (!transaction) return;
+
+  const requiresPaidState = ["BOTTLE_DETECTED", "FILLING_STARTED", "FILLING_COMPLETED"].includes(input.eventType);
+  if (requiresPaidState && transaction.paymentStatus !== "PAID") {
+    return;
+  }
 
   if (input.eventType === "BOTTLE_DETECTED") {
     await db
