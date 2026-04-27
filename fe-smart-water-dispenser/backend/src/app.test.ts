@@ -67,6 +67,10 @@ describe("backend service", () => {
     expect(stationsResponse.statusCode).toBe(200);
     const stations = stationsResponse.json().data;
     expect(stations.length).toBeGreaterThan(0);
+    const lobbyStation = stations.find((row: { machineCode: string }) => row.machineCode === "VM-002");
+    const pmbsStation = stations.find((row: { machineCode: string }) => row.machineCode === "VM-003");
+    expect(lobbyStation?.imageUrl).toContain("prasetiyamulya.ac.id");
+    expect(pmbsStation?.imageUrl).toContain("prasetiyamulya.ac.id");
 
     const verifyResponse = await app.inject({
       method: "POST",

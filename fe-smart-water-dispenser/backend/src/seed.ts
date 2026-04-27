@@ -15,6 +15,8 @@ import {
 
 const curatedMachineImages: Record<string, string> = {
   "VM-001": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2019/09/Auditorium-bsd-Universitas-prasetiya-mulya.png",
+  "VM-002": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2019/09/Gedung-eka-tjipta-widjaja-Universitas-Prasetiya-Mulya.jpg",
+  "VM-003": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2020/04/Gedung-Universitas-Prasetiya-Mulya-edited-scaled-1.jpg",
   "VM-004": "https://www.prasetiyamulya.ac.id/wp-content/uploads/2019/09/Gedung-eka-tjipta-widjaja-Universitas-Prasetiya-Mulya.jpg",
 };
 
@@ -97,7 +99,7 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
         shortCode: "654321",
         siteId: insertedSites[1].id,
         displayName: "LOBBY EKA TJIPTA WIDJAJA",
-        imageUrl: "https://images.unsplash.com/photo-1486325212027-8081e485255e?w=120&h=120&fit=crop",
+        imageUrl: curatedMachineImages["VM-002"],
         isVerified: true,
         firmwareVersion: "sim-1.0.0",
         connectivityStatus: "ONLINE",
@@ -110,7 +112,7 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
         shortCode: "112233",
         siteId: insertedSites[2].id,
         displayName: "GEDUNG PMBS",
-        imageUrl: "https://images.unsplash.com/photo-1497366216548-37526070297c?w=120&h=120&fit=crop",
+        imageUrl: curatedMachineImages["VM-003"],
         isVerified: false,
         firmwareVersion: "sim-1.0.0",
         connectivityStatus: "DEGRADED",
