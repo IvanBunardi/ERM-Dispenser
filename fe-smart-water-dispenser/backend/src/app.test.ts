@@ -420,4 +420,209 @@ describe("backend service", () => {
       command: "CANCEL_ORDER",
     });
   });
+
+  it("marks the active machine transaction as paid when PAYMENT_CONFIRMED_BY_BUTTON arrives from the IoT", async () => {
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-004/status",
+      payload: JSON.stringify({
+        machineId: "VM-004",
+        state: "WAIT_PAYMENT",
+        source: "LOCAL",
+        transactionId: "LOCAL-DEVICE-123",
+        targetVolumeMl: 500,
+        amount: 2000,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const tabletMachineResponse = await app.inject({
+      method: "GET",
+      url: "/api/customer/machines/VM-004?mode=tablet",
+    });
+
+    expect(tabletMachineResponse.statusCode).toBe(200);
+    const activeTransaction = tabletMachineResponse.json().data.activeTransaction;
+    expect(activeTransaction).toBeTruthy();
+    expect(activeTransaction.paymentStatus).toBe("PENDING");
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-004/event",
+      payload: JSON.stringify({
+        machineId: "VM-004",
+        transactionId: "LOCAL-DEVICE-123",
+        event: "PAYMENT_CONFIRMED_BY_BUTTON",
+        state: "WAIT_PAYMENT",
+        source: "LOCAL",
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const transactionDetailResponse = await app.inject({
+      method: "GET",
+      url: `/api/customer/transactions/${activeTransaction.id}`,
+    });
+
+    expect(transactionDetailResponse.statusCode).toBe(200);
+    expect(transactionDetailResponse.json().data.transaction.paymentStatus).toBe("PAID");
+    expect(transactionDetailResponse.json().data.transaction.dispenseStatus).toBe("WAITING_BOTTLE");
+
+    const publishedCommands = (services.mqtt as any).published as Array<{
+      machineCode: string;
+      topic: string;
+      payload: Record<string, unknown>;
+    }>;
+    const paidCommand = [...publishedCommands]
+      .reverse()
+      .find((entry) => entry.machineCode === "VM-004" && entry.payload.command === "PAYMENT_PAID");
+    expect(paidCommand).toBeTruthy();
+    expect(paidCommand?.topic).toBe("vending/VM-004/command");
+    expect(paidCommand?.payload).toEqual({
+      command: "PAYMENT_PAID",
+      transactionId: activeTransaction.id,
+    });
+  });
+
+  it("advances the tablet transaction timeline as simulated bottle and filling events arrive from MQTT", async () => {
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/status",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        state: "WAIT_PAYMENT",
+        source: "LOCAL",
+        transactionId: "LOCAL-TIMELINE-1",
+        targetVolumeMl: 500,
+        amount: 2000,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const machineResponse = await app.inject({
+      method: "GET",
+      url: "/api/customer/machines/VM-002?mode=tablet",
+    });
+
+    expect(machineResponse.statusCode).toBe(200);
+    const transactionId = machineResponse.json().data.activeTransaction.id as string;
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/event",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        event: "PAYMENT_CONFIRMED_BY_BUTTON",
+        state: "WAIT_PAYMENT",
+        source: "LOCAL",
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/status",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        state: "WAIT_BOTTLE",
+        source: "LOCAL",
+        bottleDetected: false,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/event",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        event: "BOTTLE_SIMULATED_READY",
+        state: "READY_TO_FILL",
+        source: "LOCAL",
+        bottleDetected: true,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/status",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        state: "READY_TO_FILL",
+        source: "LOCAL",
+        bottleDetected: true,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/event",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        event: "FILLING_STARTED",
+        state: "FILLING",
+        source: "LOCAL",
+        bottleDetected: true,
+        pumpRunning: true,
+        filledMl: 120,
+        flowRateLpm: 4.4,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/status",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        state: "FILLING",
+        source: "LOCAL",
+        bottleDetected: true,
+        pumpRunning: true,
+        filledMl: 300,
+        flowRateLpm: 4.2,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/event",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        transactionId: "LOCAL-TIMELINE-1",
+        event: "FILLING_FORCE_COMPLETED",
+        state: "COMPLETE",
+        source: "LOCAL",
+        filledMl: 500,
+        flowRateLpm: 4.0,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const transactionResponse = await app.inject({
+      method: "GET",
+      url: `/api/customer/transactions/${transactionId}`,
+    });
+
+    expect(transactionResponse.statusCode).toBe(200);
+    const transactionData = transactionResponse.json().data;
+    expect(transactionData.transaction.paymentStatus).toBe("PAID");
+    expect(transactionData.transaction.dispenseStatus).toBe("COMPLETED");
+    expect(transactionData.latestStatus.state).toBe("COMPLETE");
+    expect(transactionData.recentEvents.some((event: { eventType: string }) => event.eventType === "BOTTLE_DETECTED")).toBe(true);
+    expect(transactionData.recentEvents.some((event: { eventType: string }) => event.eventType === "FILLING_COMPLETED")).toBe(true);
+  });
 });

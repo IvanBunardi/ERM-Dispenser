@@ -4,6 +4,7 @@ import {
   appendTransactionState,
   applyDeviceEvent,
   ensureMachineWaitPaymentTransaction,
+  getActiveMachineTransaction,
   updateCustomerImpact,
 } from "../lib/domain.js";
 import { machineStatusSnapshots, machines, transactions, dispenseSessions } from "../db/schema.js";
@@ -102,6 +103,11 @@ function mapOperationStatus(state: string | null, pumpRunning: boolean) {
   return "IDLE";
 }
 
+function isUuidLike(value: string | null | undefined) {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 async function findMachineByCode(services: AppServices, machineCode: string) {
   const db = services.dbClient.db as any;
   const [machine] = await db.select().from(machines).where(eq(machines.machineCode, machineCode)).limit(1);
@@ -170,16 +176,28 @@ async function ingestTelemetrySnapshot(
     })
     .where(eq(machines.id, machine.id));
 
-  if (!telemetry.transactionId || !resolvedState) return;
+  if (!resolvedState) return;
 
   const nextDispenseStatus = STATE_TO_DISPENSE_STATUS[resolvedState];
   if (!nextDispenseStatus) return;
 
-  const [transaction] = await db
-    .select()
-    .from(transactions)
-    .where(eq(transactions.id, telemetry.transactionId))
-    .limit(1);
+  let transaction = null;
+
+  if (isUuidLike(telemetry.transactionId)) {
+    const normalizedTransactionId = telemetry.transactionId!;
+    const [matchedTransaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, normalizedTransactionId))
+      .limit(1);
+
+    transaction = matchedTransaction ?? null;
+  }
+
+  if (!transaction) {
+    transaction = await getActiveMachineTransaction(services, machine.id);
+  }
+
   if (!transaction || transaction.machineId !== machine.id || transaction.dispenseStatus === nextDispenseStatus) {
     return;
   }
@@ -287,6 +305,8 @@ async function ingestEvent(
   if (!rawEvent) return;
 
   const mappedEvent =
+    rawEvent === "BOTTLE_SIMULATED" || rawEvent === "BOTTLE_SIMULATED_READY" ? "BOTTLE_DETECTED" :
+    rawEvent === "FILLING_FORCE_COMPLETED" ? "FILLING_COMPLETED" :
     rawEvent === "FILLING_COMPLETE" ? "FILLING_COMPLETED" :
     rawEvent === "ORDER_CANCELLED" || rawEvent === "CANCEL_BUTTON" ? "TRANSACTION_CANCELLED" :
     rawEvent === "DEVICE_ERROR" || rawEvent === "BOTTLE_REMOVED_FILLING" ? "ERROR_RAISED" :

@@ -341,6 +341,107 @@ export async function publishMachineCommand(
   return commandId;
 }
 
+function isUuidLike(value: string | null | undefined) {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function resolveMachineTransactionForDevice(
+  services: AppServices,
+  machineId: string,
+  transactionId?: string | null,
+) {
+  const db = services.dbClient.db as any;
+
+  if (isUuidLike(transactionId)) {
+    const normalizedTransactionId = transactionId!;
+    const [transaction] = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, normalizedTransactionId))
+      .limit(1);
+
+    if (transaction?.machineId === machineId) {
+      return transaction;
+    }
+  }
+
+  return getActiveMachineTransaction(services, machineId);
+}
+
+async function confirmMachinePaymentFromDevice(
+  services: AppServices,
+  input: {
+    machineId: string;
+    machineCode: string;
+    transactionId?: string | null;
+    payload: Record<string, unknown>;
+  },
+) {
+  const db = services.dbClient.db as any;
+  const transaction = await resolveMachineTransactionForDevice(services, input.machineId, input.transactionId);
+
+  if (!transaction) {
+    return null;
+  }
+
+  if (transaction.paymentStatus === "PAID") {
+    return transaction;
+  }
+
+  const nextDispenseStatus = transaction.dispenseStatus === "WAITING_PAYMENT"
+    ? "WAITING_BOTTLE"
+    : transaction.dispenseStatus;
+
+  await db
+    .update(payments)
+    .set({
+      transactionStatus: "settlement",
+      updatedAt: new Date(),
+    })
+    .where(eq(payments.transactionId, transaction.id));
+
+  await db
+    .update(transactions)
+    .set({
+      paymentStatus: "PAID",
+      dispenseStatus: nextDispenseStatus,
+    })
+    .where(eq(transactions.id, transaction.id));
+
+  await appendTransactionState(
+    services,
+    transaction.id,
+    nextDispenseStatus,
+    "DEVICE_PAYMENT",
+    input.machineCode,
+    transaction.dispenseStatus,
+    {
+      eventType: "PAYMENT_CONFIRMED_BY_BUTTON",
+      providerStatus: "settlement",
+      paymentStatus: "PAID",
+      deviceTransactionId: input.transactionId ?? null,
+      ...input.payload,
+    },
+  );
+
+  await publishMachineCommand(services, {
+    machineId: input.machineId,
+    machineCode: input.machineCode,
+    transactionId: transaction.id,
+    commandType: "PAYMENT_PAID",
+    payload: {
+      transactionId: transaction.id,
+    },
+  });
+
+  return {
+    ...transaction,
+    paymentStatus: "PAID",
+    dispenseStatus: nextDispenseStatus,
+  };
+}
+
 export async function applyDeviceEvent(
   services: AppServices,
   input: {
@@ -358,10 +459,12 @@ export async function applyDeviceEvent(
     throw new Error(`Machine ${input.machineCode} not found`);
   }
 
+  const transaction = await resolveMachineTransactionForDevice(services, machine.id, input.transactionId);
+
   await db.insert(machineEvents).values({
     id: randomUUID(),
     machineId: machine.id,
-    transactionId: input.transactionId ?? null,
+    transactionId: transaction?.id ?? null,
     topic: input.topic,
     eventType: input.eventType,
     payload: jsonStringify(input.payload),
@@ -404,11 +507,17 @@ export async function applyDeviceEvent(
     })
     .where(eq(machines.id, machine.id));
 
-  if (!input.transactionId) return;
-
-  const txRows = await db.select().from(transactions).where(eq(transactions.id, input.transactionId)).limit(1);
-  const transaction = txRows[0];
   if (!transaction) return;
+
+  if (input.eventType === "PAYMENT_CONFIRMED_BY_BUTTON") {
+    await confirmMachinePaymentFromDevice(services, {
+      machineId: machine.id,
+      machineCode: machine.machineCode,
+      transactionId: input.transactionId,
+      payload: input.payload,
+    });
+    return;
+  }
 
   const requiresPaidState = ["BOTTLE_DETECTED", "FILLING_STARTED", "FILLING_COMPLETED"].includes(input.eventType);
   if (requiresPaidState && transaction.paymentStatus !== "PAID") {

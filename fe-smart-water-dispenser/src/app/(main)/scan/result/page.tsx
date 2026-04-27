@@ -59,6 +59,8 @@ interface TransactionSnapshot {
     resultStatus?: string | null;
   } | null;
   latestStatus: {
+    state?: string | null;
+    source?: string | null;
     filledMl?: number | null;
     bottleDetected?: boolean | null;
     pumpRunning?: boolean | null;
@@ -157,6 +159,54 @@ function getStageIcon(stage: DeviceStage) {
 function formatEventLabel(eventType: string | undefined) {
   if (!eventType) return 'Waiting';
   return eventType.toLowerCase().replace(/_/g, ' ');
+}
+
+function formatProcessEventLabel(eventType: string | undefined) {
+  switch (eventType) {
+    case 'PAYMENT_CONFIRMED_BY_BUTTON':
+      return 'QRIS confirmed on machine';
+    case 'PAYMENT_PAID_MQTT':
+      return 'Payment confirmed by backend';
+    case 'BOTTLE_DETECTED':
+      return 'Bottle detected';
+    case 'BOTTLE_SIMULATED':
+    case 'BOTTLE_SIMULATED_READY':
+      return 'Bottle button pressed';
+    case 'FILLING_STARTED':
+      return 'Filling started';
+    case 'FILLING_COMPLETED':
+    case 'FILLING_FORCE_COMPLETED':
+    case 'FILLING_COMPLETE':
+      return 'Filling completed';
+    case 'TRANSACTION_CANCELLED':
+    case 'CANCEL_BUTTON':
+      return 'Transaction cancelled';
+    case 'ERROR_RAISED':
+      return 'Machine error';
+    default:
+      return formatEventLabel(eventType);
+  }
+}
+
+function formatMachineStateLabel(state: string | null | undefined) {
+  if (!state) return 'waiting signal';
+
+  switch (state) {
+    case 'WAIT_PAYMENT':
+      return 'waiting payment';
+    case 'PAYMENT_SUCCESS':
+      return 'payment success';
+    case 'WAIT_BOTTLE':
+      return 'waiting bottle';
+    case 'READY_TO_FILL':
+      return 'ready to fill';
+    case 'FILLING':
+      return 'filling';
+    case 'COMPLETE':
+      return 'complete';
+    default:
+      return state.toLowerCase().replace(/_/g, ' ');
+  }
 }
 
 function getFilledMl(snapshot: TransactionSnapshot | null) {
@@ -464,6 +514,8 @@ function ScanResultContent() {
     const fillPercent = stage === 'COMPLETED' ? 100 : getFillPercent(snapshot);
     const flowRate = getFlowRate(snapshot);
     const recentEvent = snapshot?.recentEvents?.[0]?.eventType;
+    const recentTimelineEvents = snapshot?.recentEvents?.slice(0, 4) ?? [];
+    const machineSignal = snapshot?.latestStatus?.state ?? null;
 
     return (
       <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_45%,_#eef2ff)]">
@@ -487,10 +539,34 @@ function ScanResultContent() {
                 <p className="mt-1 text-sm text-slate-500">{machine?.displayName ?? code}</p>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {formatEventLabel(recentEvent)}
+                {formatProcessEventLabel(recentEvent)}
               </span>
             </div>
             <StageTimeline currentStage={stage} />
+            <div className="rounded-2xl bg-slate-50 px-3.5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Machine Signal</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{formatMachineStateLabel(machineSignal)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Source</p>
+                  <p className="mt-1 text-xs font-medium text-slate-600">{snapshot?.latestStatus?.source ?? 'MQTT'}</p>
+                </div>
+              </div>
+              {recentTimelineEvents.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recentTimelineEvents.map((event) => (
+                    <span
+                      key={`${event.eventType}-${event.occurredAt}`}
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                    >
+                      {formatProcessEventLabel(event.eventType)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
 
           {/* <section className="rounded-[24px] border border-sky-100 bg-white/90 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.07)]">
