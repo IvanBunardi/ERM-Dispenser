@@ -80,6 +80,20 @@ export async function registerCustomerRoutes(app: FastifyInstance, services: App
       sourceChannel: parsed.data.sourceChannel,
     });
 
+    if (parsed.data.sourceChannel === "TABLET_KIOSK") {
+      await publishMachineCommand(services, {
+        machineId: machine.id,
+        machineCode: machine.machineCode,
+        transactionId: result.transactionId,
+        commandType: "START_ORDER",
+        payload: {
+          transactionId: result.transactionId,
+          volumeMl: parsed.data.volumeMl,
+          amount: volumeOption.priceAmount,
+        },
+      });
+    }
+
     return ok(reply, {
       transactionId: result.transactionId,
       orderId: result.orderId,

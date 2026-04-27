@@ -122,6 +122,7 @@ export async function ensureMachineWaitPaymentTransaction(
     volumeMl: number;
     grossAmount: number;
     sourceChannel: string;
+    transactionId?: string | null;
   },
 ) {
   const db = services.dbClient.db as any;
@@ -137,6 +138,14 @@ export async function ensureMachineWaitPaymentTransaction(
 
   const activeTransaction = await getActiveMachineTransaction(services, machine.id);
   if (activeTransaction) {
+    if (input.transactionId && activeTransaction.id === input.transactionId) {
+      return {
+        created: false,
+        transactionId: activeTransaction.id,
+        orderId: activeTransaction.orderId,
+      };
+    }
+
     if (activeTransaction.sourceChannel === "TABLET_KIOSK") {
       await cancelTransactionForMachineOverride(services, activeTransaction.id, machine.machineCode, {
         reason: "IOT_WAIT_PAYMENT_OVERRIDE",

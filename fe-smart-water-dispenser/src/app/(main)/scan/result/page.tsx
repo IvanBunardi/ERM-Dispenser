@@ -164,48 +164,55 @@ function formatEventLabel(eventType: string | undefined) {
 function formatProcessEventLabel(eventType: string | undefined) {
   switch (eventType) {
     case 'PAYMENT_CONFIRMED_BY_BUTTON':
-      return 'QRIS confirmed on machine';
+      return 'Pembayaran dikonfirmasi';
     case 'PAYMENT_PAID_MQTT':
-      return 'Payment confirmed by backend';
+      return 'Pembayaran berhasil';
     case 'BOTTLE_DETECTED':
-      return 'Bottle detected';
+      return 'Botol terdeteksi';
     case 'BOTTLE_SIMULATED':
     case 'BOTTLE_SIMULATED_READY':
-      return 'Bottle button pressed';
+      return 'Botol siap';
     case 'FILLING_STARTED':
-      return 'Filling started';
+      return 'Pengisian dimulai';
     case 'FILLING_COMPLETED':
     case 'FILLING_FORCE_COMPLETED':
     case 'FILLING_COMPLETE':
-      return 'Filling completed';
+      return 'Pengisian selesai';
     case 'TRANSACTION_CANCELLED':
     case 'CANCEL_BUTTON':
-      return 'Transaction cancelled';
+      return 'Transaksi dibatalkan';
     case 'ERROR_RAISED':
-      return 'Machine error';
+      return 'Mesin bermasalah';
     default:
       return formatEventLabel(eventType);
   }
 }
 
 function formatMachineStateLabel(state: string | null | undefined) {
-  if (!state) return 'waiting signal';
+  if (!state) return 'Menunggu proses';
 
   switch (state) {
     case 'WAIT_PAYMENT':
-      return 'waiting payment';
+      return 'Menunggu pembayaran';
     case 'PAYMENT_SUCCESS':
-      return 'payment success';
+      return 'Pembayaran diterima';
     case 'WAIT_BOTTLE':
-      return 'waiting bottle';
+      return 'Menunggu botol';
     case 'READY_TO_FILL':
-      return 'ready to fill';
+      return 'Siap isi';
     case 'FILLING':
-      return 'filling';
+      return 'Sedang mengisi';
     case 'COMPLETE':
-      return 'complete';
+      return 'Selesai';
+    case 'CANCELLED':
+      return 'Dibatalkan';
+    case 'ERROR':
+      return 'Gangguan mesin';
     default:
-      return state.toLowerCase().replace(/_/g, ' ');
+      return state
+        .toLowerCase()
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
   }
 }
 
@@ -219,14 +226,14 @@ function getFillPercent(snapshot: TransactionSnapshot | null) {
   if (!snapshot) return 0;
   const stage = getDeviceStage(snapshot);
   if (stage === 'WAITING_PAYMENT') return 0;
-  if (stage === 'WAITING_BOTTLE') return 14;
-  if (stage === 'READY_TO_FILL') return 28;
+  if (stage === 'WAITING_BOTTLE') return 0;
+  if (stage === 'READY_TO_FILL') return 0;
   if (stage === 'COMPLETED') return 100;
 
   const filledMl = getFilledMl(snapshot);
   const targetMl = snapshot.transaction.volumeMl || 0;
-  if (!targetMl) return 55;
-  return Math.max(36, Math.min(96, Math.round((filledMl / targetMl) * 100)));
+  if (!targetMl) return 0;
+  return Math.max(0, Math.min(100, Math.round((filledMl / targetMl) * 100)));
 }
 
 function getFlowRate(snapshot: TransactionSnapshot | null) {
@@ -544,15 +551,9 @@ function ScanResultContent() {
             </div>
             <StageTimeline currentStage={stage} />
             <div className="rounded-2xl bg-slate-50 px-3.5 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Machine Signal</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">{formatMachineStateLabel(machineSignal)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Source</p>
-                  <p className="mt-1 text-xs font-medium text-slate-600">{snapshot?.latestStatus?.source ?? 'MQTT'}</p>
-                </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Status Mesin</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">{formatMachineStateLabel(machineSignal)}</p>
               </div>
               {recentTimelineEvents.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -750,19 +751,10 @@ function ScanResultContent() {
               </div>
               <div className="border-t border-slate-100 pt-3 flex justify-between text-sm">
                 <span className="text-slate-400 text-xs">Tablet QRIS</span>
-                <span className="text-xs text-slate-400">IoT will override if WAIT_PAYMENT arrives</span>
+                <span className="text-xs text-slate-400">Sinkron dengan mesin</span>
               </div>
             </div>
           )}
-
-          <div className="rounded-[28px] border border-sky-100 bg-sky-50 p-5 shadow-sm">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-sky-700">IoT Priority</p>
-            <p className="mt-2 text-sm leading-relaxed text-sky-900/80">
-              Tablet bisa memulai pembayaran dari sini. Tetapi jika IoT untuk <span className="font-semibold">{machine?.machineCode ?? code}</span>
-              masuk ke state <span className="font-semibold">WAIT_PAYMENT</span>, transaksi tablet akan dibatalkan dan layar ini otomatis
-              berpindah ke transaksi dari IoT.
-            </p>
-          </div>
 
           <button
             onClick={handleStart}

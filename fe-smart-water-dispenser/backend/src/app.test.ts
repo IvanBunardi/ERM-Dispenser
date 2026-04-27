@@ -485,6 +485,66 @@ describe("backend service", () => {
     });
   });
 
+  it("publishes START_ORDER for tablet payments and reuses the same transaction on device WAIT_PAYMENT", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/customer/transactions",
+      payload: {
+        machineCode: "VM-001",
+        volumeMl: 1000,
+        sourceChannel: "TABLET_KIOSK",
+      },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    const createdTransactionId = createResponse.json().data.transactionId as string;
+
+    const publishedCommands = (services.mqtt as any).published as Array<{
+      machineCode: string;
+      topic: string;
+      payload: Record<string, unknown>;
+    }>;
+    const startOrderCommand = [...publishedCommands]
+      .reverse()
+      .find((entry) => entry.machineCode === "VM-001" && entry.payload.command === "START_ORDER");
+
+    expect(startOrderCommand).toBeTruthy();
+    expect(startOrderCommand?.topic).toBe("vending/VM-001/command");
+    expect(startOrderCommand?.payload).toEqual({
+      command: "START_ORDER",
+      transactionId: createdTransactionId,
+      volumeMl: 1000,
+      amount: 4000,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-001/status",
+      payload: JSON.stringify({
+        machineId: "VM-001",
+        transactionId: createdTransactionId,
+        state: "WAIT_PAYMENT",
+        source: "TABLET",
+        targetVolumeMl: 1000,
+        amount: 4000,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const machineResponse = await app.inject({
+      method: "GET",
+      url: "/api/customer/machines/VM-001?mode=tablet",
+    });
+
+    expect(machineResponse.statusCode).toBe(200);
+    const activeTransaction = machineResponse.json().data.activeTransaction;
+    expect(activeTransaction).toBeTruthy();
+    expect(activeTransaction.id).toBe(createdTransactionId);
+    expect(activeTransaction.volumeMl).toBe(1000);
+    expect(activeTransaction.grossAmount).toBe(4000);
+  });
+
   it("advances the tablet transaction timeline as simulated bottle and filling events arrive from MQTT", async () => {
     await handleInboundMqttMessage(services, {
       topic: "vending/VM-002/status",

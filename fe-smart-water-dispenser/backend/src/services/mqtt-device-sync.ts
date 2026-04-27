@@ -151,6 +151,7 @@ async function ingestTelemetrySnapshot(
       volumeMl: Math.round(telemetry.targetVolumeMl),
       grossAmount: Math.round(telemetry.amount),
       sourceChannel: "IOT_TABLET_SYNC",
+      transactionId: telemetry.transactionId,
     });
   }
 
