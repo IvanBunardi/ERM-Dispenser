@@ -266,6 +266,38 @@ function ScanResultContent() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const machineWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const syncTransactionSnapshot = useEffectEvent(async (txId: string) => {
+    const res = await api.get<TransactionSnapshot>(`/api/customer/transactions/${txId}`);
+    setLiveSnapshot(res);
+    setMachineBusyState(null);
+    if (res.payment) setPayment(res.payment);
+
+    const tx = res.transaction;
+    if (tx.dispenseStatus === 'COMPLETED') {
+      if (pollRef.current) clearInterval(pollRef.current);
+      setPageState('success');
+      if (isTabletMode) {
+        setTimeout(() => {
+          resetToMachineReadyState();
+        }, 5000);
+      } else {
+        setTimeout(() => router.push('/explore'), 3000);
+      }
+      return;
+    }
+
+    if (
+      tx.dispenseStatus === 'CANCELLED'
+      || tx.dispenseStatus === 'FAILED'
+      || tx.paymentStatus === 'FAILED'
+      || tx.paymentStatus === 'EXPIRED'
+    ) {
+      if (pollRef.current) clearInterval(pollRef.current);
+      setErrorMsg('Transaction was cancelled, failed, or expired');
+      setPageState('error');
+    }
+  });
+
   const resetToMachineReadyState = () => {
     setTransactionId(null);
     setPayment(null);
@@ -278,35 +310,7 @@ function ScanResultContent() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const res = await api.get<TransactionSnapshot>(`/api/customer/transactions/${txId}`);
-        setLiveSnapshot(res);
-        setMachineBusyState(null);
-        if (res.payment) setPayment(res.payment);
-
-        const tx = res.transaction;
-        if (tx.dispenseStatus === 'COMPLETED') {
-          clearInterval(pollRef.current!);
-          setPageState('success');
-          if (isTabletMode) {
-            setTimeout(() => {
-              resetToMachineReadyState();
-            }, 5000);
-          } else {
-            setTimeout(() => router.push('/explore'), 3000);
-          }
-          return;
-        }
-
-        if (
-          tx.dispenseStatus === 'CANCELLED'
-          || tx.dispenseStatus === 'FAILED'
-          || tx.paymentStatus === 'FAILED'
-          || tx.paymentStatus === 'EXPIRED'
-        ) {
-          clearInterval(pollRef.current!);
-          setErrorMsg('Transaction was cancelled, failed, or expired');
-          setPageState('error');
-        }
+        await syncTransactionSnapshot(txId);
       } catch {
         // ignore polling errors
       }
@@ -314,13 +318,11 @@ function ScanResultContent() {
   };
 
   const attachToExistingTransaction = useEffectEvent(async (txId: string) => {
-    const snapshot = await api.get<TransactionSnapshot>(`/api/customer/transactions/${txId}`);
     setTransactionId(txId);
-    setLiveSnapshot(snapshot);
-    setMachineBusyState(null);
-    if (snapshot.payment) setPayment(snapshot.payment);
+    await syncTransactionSnapshot(txId);
+    const snapshot = await api.get<TransactionSnapshot>(`/api/customer/transactions/${txId}`);
     setPageState(snapshot.transaction.dispenseStatus === 'COMPLETED' ? 'success' : 'processing');
-    if (snapshot.transaction.dispenseStatus !== 'COMPLETED') {
+    if (snapshot.transaction.dispenseStatus !== 'COMPLETED' && snapshot.transaction.dispenseStatus !== 'CANCELLED' && snapshot.transaction.dispenseStatus !== 'FAILED') {
       startPolling(txId);
     }
   });
@@ -412,6 +414,40 @@ function ScanResultContent() {
       if (machineWatchRef.current) clearInterval(machineWatchRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+
+      if (transactionId && (pageState === 'processing' || pageState === 'success')) {
+        void syncTransactionSnapshot(transactionId);
+        return;
+      }
+
+      if (machine?.machineCode && pageState === 'ready') {
+        void api.get<MachineLookupResponse>(getMachineLookupPath(machine.machineCode, isTabletMode))
+          .then(async (machineRes) => {
+            const activeTransaction = machineRes.activeTransaction;
+            if (activeTransaction?.id && !isTerminalDispenseStatus(activeTransaction.dispenseStatus)) {
+              await attachToExistingTransaction(activeTransaction.id);
+            }
+          })
+          .catch(() => {
+            // ignore focus refresh errors
+          });
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener('focus', handleVisibilityRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+    };
+  }, [transactionId, pageState, machine?.machineCode, isTabletMode]);
 
   useEffect(() => {
     if (pageState !== 'ready' || !machine?.machineCode) {
