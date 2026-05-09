@@ -22,6 +22,15 @@ interface Transaction {
 interface MachineEvent {
   id: string; occurredAt: string; eventType: string; payload: unknown; machineId: string
 }
+interface RefillLog {
+  id: string
+  occurredAt: string
+  source: string
+  eventType: string
+  tankLevelPct: number | null
+  tankLiters: number | null
+  refillId: string | null
+}
 interface Machine {
   id: string; machineCode: string; displayName: string; operationStatus: string
   latestStatus?: { tankLevelPct: number; waterTempC: number; flowRateMlS: number; pressureBar: number; reportedAt: string } | null
@@ -37,6 +46,21 @@ interface EnvReport {
   co2ReducedKg: number
   wastePreventedLiters: number
   energyEfficiencyPct: number
+}
+
+interface NewMachineForm {
+  machineCode: string
+  shortCode: string
+  displayName: string
+  siteName: string
+  siteAddress: string
+  latitude: string
+  longitude: string
+  imageUrl: string
+  firmwareVersion: string
+  initialTankLevelPct: string
+  price500ml: string
+  price1l: string
 }
 
 type TabId = 'dashboard' | 'riwayat' | 'kontrol' | 'lingkungan'
@@ -113,10 +137,27 @@ export default function AdminDashboard() {
   const [machines, setMachines] = useState<Machine[]>([])
   const [selectedMachineId, setSelectedMachineId] = useState<string>('')
   const [machineLogs, setMachineLogs] = useState<MachineEvent[]>([])
+  const [refillLogs, setRefillLogs] = useState<RefillLog[]>([])
   const [envReport, setEnvReport] = useState<EnvReport | null>(null)
   const [actionLoading, setActionLoading] = useState('')
   const [actionMsg, setActionMsg] = useState('')
   const [cancelLoadingId, setCancelLoadingId] = useState('')
+  const [createMachineLoading, setCreateMachineLoading] = useState(false)
+  const [isCreateMachineOpen, setIsCreateMachineOpen] = useState(false)
+  const [newMachine, setNewMachine] = useState<NewMachineForm>({
+    machineCode: '',
+    shortCode: '',
+    displayName: '',
+    siteName: '',
+    siteAddress: '',
+    latitude: '',
+    longitude: '',
+    imageUrl: '',
+    firmwareVersion: 'sim-1.0.0',
+    initialTankLevelPct: '100',
+    price500ml: '2000',
+    price1l: '4000',
+  })
 
   // Check existing admin session
   useEffect(() => {
@@ -160,6 +201,10 @@ export default function AdminDashboard() {
     api.get<MachineEvent[]>(`/api/admin/machines/${selectedMachineId}/logs`)
       .then(res => setMachineLogs(Array.isArray(res) ? res : []))
       .catch(() => setMachineLogs([]))
+
+    api.get<RefillLog[]>(`/api/admin/machines/${selectedMachineId}/refill-logs`)
+      .then(res => setRefillLogs(Array.isArray(res) ? res : []))
+      .catch(() => setRefillLogs([]))
   }, [selectedMachineId])
 
   const handleAction = async (machineId: string, action: string) => {
@@ -169,11 +214,69 @@ export default function AdminDashboard() {
       await api.post(`/api/admin/machines/${machineId}/actions`, { action })
       setActionMsg(`✓ ${action.replace(/_/g, ' ')} executed`)
       await loadMachines()
+      if (machineId === selectedMachineId) {
+        const logs = await api.get<RefillLog[]>(`/api/admin/machines/${machineId}/refill-logs`).catch(() => [])
+        setRefillLogs(Array.isArray(logs) ? logs : [])
+      }
     } catch (err) {
       setActionMsg(`✗ ${err instanceof ApiError ? err.message : 'Action failed'}`)
     } finally {
       setActionLoading('')
       setTimeout(() => setActionMsg(''), 3000)
+    }
+  }
+
+  const updateNewMachine = (field: keyof NewMachineForm, value: string) => {
+    setNewMachine(prev => ({ ...prev, [field]: value }))
+  }
+
+  const resetNewMachine = () => {
+    setNewMachine({
+      machineCode: '',
+      shortCode: '',
+      displayName: '',
+      siteName: '',
+      siteAddress: '',
+      latitude: '',
+      longitude: '',
+      imageUrl: '',
+      firmwareVersion: 'sim-1.0.0',
+      initialTankLevelPct: '100',
+      price500ml: '2000',
+      price1l: '4000',
+    })
+  }
+
+  const handleCreateMachine = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreateMachineLoading(true)
+    setActionMsg('')
+    try {
+      const payload = {
+        machineCode: newMachine.machineCode.trim(),
+        shortCode: newMachine.shortCode.trim(),
+        displayName: newMachine.displayName.trim(),
+        siteName: newMachine.siteName.trim(),
+        siteAddress: newMachine.siteAddress.trim(),
+        latitude: newMachine.latitude.trim() ? Number(newMachine.latitude) : null,
+        longitude: newMachine.longitude.trim() ? Number(newMachine.longitude) : null,
+        imageUrl: newMachine.imageUrl.trim(),
+        firmwareVersion: newMachine.firmwareVersion.trim() || 'sim-1.0.0',
+        initialTankLevelPct: Number(newMachine.initialTankLevelPct),
+        price500ml: Number(newMachine.price500ml),
+        price1l: Number(newMachine.price1l),
+      }
+      const res = await api.post<{ machine: Machine }>('/api/admin/machines', payload)
+      setActionMsg('âœ“ mesin baru berhasil ditambahkan')
+      resetNewMachine()
+      await loadMachines()
+      if (res.machine?.id) setSelectedMachineId(res.machine.id)
+      setIsCreateMachineOpen(false)
+    } catch (err) {
+      setActionMsg(`âœ— ${err instanceof ApiError ? err.message : 'Gagal menambahkan mesin'}`)
+    } finally {
+      setCreateMachineLoading(false)
+      setTimeout(() => setActionMsg(''), 4000)
     }
   }
 
@@ -329,8 +432,7 @@ export default function AdminDashboard() {
           <>
             {machines.length > 1 && (
               <div style={{ marginBottom: 16 }}>
-                <select value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)}
-                  style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontFamily: 'Montserrat', fontSize: 13 }}>
+                <select value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)} className="admin-select">
                   {machines.map(m => <option key={m.id} value={m.id}>{m.displayName} ({m.machineCode})</option>)}
                 </select>
               </div>
@@ -382,18 +484,21 @@ export default function AdminDashboard() {
                 {actionMsg}
               </div>
             )}
-            {machines.length > 1 && (
-              <div style={{ marginBottom: 16 }}>
-                <select value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)}
-                  style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', fontFamily: 'Montserrat', fontSize: 13 }}>
+            <div className="machine-toolbar">
+              <div className="machine-toolbar-select">
+                <select value={selectedMachineId} onChange={e => setSelectedMachineId(e.target.value)} className="admin-select">
                   {machines.map(m => <option key={m.id} value={m.id}>{m.displayName} ({m.machineCode})</option>)}
                 </select>
               </div>
-            )}
+              <button type="button" className="primary-action" onClick={() => setIsCreateMachineOpen(true)}>
+                Tambah Mesin Baru
+              </button>
+            </div>
             <div className="control-grid">
               {[
                 { label: 'Set Maintenance', action: 'SET_MAINTENANCE', color: '#F97316' },
                 { label: 'Resume Operasi', action: 'RESUME_OPERATION', color: '#16A34A' },
+                { label: 'Refill Tank 19 L', action: 'REFILL_TANK', color: '#0891B2' },
                 { label: 'Cancel Transaksi Aktif', action: 'CANCEL_ACTIVE_TRANSACTION', color: '#DC2626' },
                 { label: 'Sync Status', action: 'SYNC_STATUS', color: '#2563EB' },
               ].map(({ label, action, color }) => (
@@ -434,6 +539,78 @@ export default function AdminDashboard() {
                 )}
               </div>
             </div>
+
+            <div className="table-card">
+              <div className="table-title">Log Refill Mesin</div>
+              <div className="table-wrapper">
+                <table>
+                  <thead><tr><th>Waktu</th><th>Event</th><th>Source</th><th>Tank</th><th>Refill ID</th></tr></thead>
+                  <tbody>
+                    {refillLogs.map(log => (
+                      <tr key={log.id}>
+                        <td style={{ fontFamily: 'monospace', color: '#2563EB', fontWeight: 600 }}>{formatIoTLogTimestamp(log.occurredAt)}</td>
+                        <td>{log.eventType}</td>
+                        <td>{log.source}</td>
+                        <td>{log.tankLiters !== null ? `${log.tankLiters} L` : '-'} {log.tankLevelPct !== null ? `(${log.tankLevelPct}%)` : ''}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.refillId ?? '-'}</td>
+                      </tr>
+                    ))}
+                    {refillLogs.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: 20 }}>Belum ada log refill untuk mesin ini</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {isCreateMachineOpen && (
+              <div className="admin-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-machine-title">
+                <div className="admin-modal">
+                  <div className="admin-modal-header">
+                    <div>
+                      <p className="admin-modal-eyebrow">Machine Registry</p>
+                      <h2 id="create-machine-title">Tambah Mesin Baru</h2>
+                    </div>
+                    <button type="button" className="modal-close" onClick={() => setIsCreateMachineOpen(false)} aria-label="Tutup modal">
+                      &times;
+                    </button>
+                  </div>
+                  <form className="machine-form" onSubmit={handleCreateMachine}>
+                    {[
+                      { key: 'machineCode', label: 'Machine Code', placeholder: 'VM-005', required: true },
+                      { key: 'shortCode', label: 'Short Code QR', placeholder: '778899', required: true },
+                      { key: 'displayName', label: 'Nama Mesin', placeholder: 'LOBBY GEDUNG BARU', required: true },
+                      { key: 'siteName', label: 'Nama Lokasi', placeholder: 'Gedung Baru', required: true },
+                      { key: 'siteAddress', label: 'Alamat', placeholder: 'BSD Campus' },
+                      { key: 'latitude', label: 'Latitude', placeholder: '-6.3015', type: 'number', step: '0.000001' },
+                      { key: 'longitude', label: 'Longitude', placeholder: '106.6405', type: 'number', step: '0.000001' },
+                      { key: 'imageUrl', label: 'Image URL', placeholder: 'https://...' },
+                      { key: 'firmwareVersion', label: 'Firmware', placeholder: 'sim-1.0.0' },
+                      { key: 'initialTankLevelPct', label: 'Tank Awal (%)', placeholder: '100', type: 'number', min: '0', max: '100', required: true },
+                      { key: 'price500ml', label: 'Harga 500ml', placeholder: '2000', type: 'number', min: '1', required: true },
+                      { key: 'price1l', label: 'Harga 1L', placeholder: '4000', type: 'number', min: '1', required: true },
+                    ].map(field => (
+                      <label className="admin-field" key={field.key}>
+                        <span>{field.label}</span>
+                        <input
+                          value={newMachine[field.key as keyof NewMachineForm]}
+                          onChange={e => updateNewMachine(field.key as keyof NewMachineForm, e.target.value)}
+                          placeholder={field.placeholder}
+                          type={field.type ?? 'text'}
+                          step={field.step}
+                          min={field.min}
+                          max={field.max}
+                          required={field.required}
+                        />
+                      </label>
+                    ))}
+                    <div className="machine-form-actions">
+                      <button type="button" className="secondary-action" onClick={resetNewMachine}>Reset</button>
+                      <button type="submit" className="primary-action" disabled={createMachineLoading}>
+                        {createMachineLoading ? 'Menyimpan...' : 'Tambah Mesin'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </>
         )}
 

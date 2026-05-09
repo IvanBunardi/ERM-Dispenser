@@ -43,8 +43,19 @@ export async function getLatestMachineStatus(services: AppServices, machineId: s
     .from(machineStatusSnapshots)
     .where(eq(machineStatusSnapshots.machineId, machineId))
     .orderBy(desc(machineStatusSnapshots.reportedAt))
-    .limit(1);
-  return rows[0] ?? null;
+    .limit(20);
+  const latest = rows[0] ?? null;
+  if (!latest || latest.tankLevelPct !== null) {
+    return latest;
+  }
+
+  const latestTankSnapshot = rows.find((row: any) => row.tankLevelPct !== null);
+  return latestTankSnapshot
+    ? {
+        ...latest,
+        tankLevelPct: latestTankSnapshot.tankLevelPct,
+      }
+    : latest;
 }
 
 export async function createTransactionWithPayment(
@@ -469,6 +480,12 @@ export async function applyDeviceEvent(
   }
 
   const transaction = await resolveMachineTransactionForDevice(services, machine.id, input.transactionId);
+  const [latestSnapshot] = await db
+    .select()
+    .from(machineStatusSnapshots)
+    .where(eq(machineStatusSnapshots.machineId, machine.id))
+    .orderBy(desc(machineStatusSnapshots.reportedAt))
+    .limit(1);
 
   await db.insert(machineEvents).values({
     id: randomUUID(),
@@ -486,11 +503,11 @@ export async function applyDeviceEvent(
         ? input.payload.tankLevelPct
         : typeof input.payload.tankLevelPercent === "number"
           ? input.payload.tankLevelPercent
-          : null,
-    bottleDetected: typeof input.payload.bottleDetected === "boolean" ? input.payload.bottleDetected : false,
-    pumpRunning: typeof input.payload.pumpRunning === "boolean" ? input.payload.pumpRunning : false,
-    filledMl: typeof input.payload.filledMl === "number" ? input.payload.filledMl : 0,
-    flowRateLpm: typeof input.payload.flowRateLpm === "number" ? String(input.payload.flowRateLpm) : "0.00",
+          : latestSnapshot?.tankLevelPct ?? null,
+    bottleDetected: typeof input.payload.bottleDetected === "boolean" ? input.payload.bottleDetected : latestSnapshot?.bottleDetected ?? false,
+    pumpRunning: typeof input.payload.pumpRunning === "boolean" ? input.payload.pumpRunning : latestSnapshot?.pumpRunning ?? false,
+    filledMl: typeof input.payload.filledMl === "number" ? input.payload.filledMl : latestSnapshot?.filledMl ?? 0,
+    flowRateLpm: typeof input.payload.flowRateLpm === "number" ? String(input.payload.flowRateLpm) : latestSnapshot?.flowRateLpm ?? "0.00",
     source: typeof input.payload.source === "string" && input.payload.source.length > 0 ? input.payload.source : "DEVICE_EVENT",
   };
 

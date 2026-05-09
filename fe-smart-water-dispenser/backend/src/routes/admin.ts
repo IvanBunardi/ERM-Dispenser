@@ -15,6 +15,7 @@ import {
   machineVolumeOptions,
   machines,
   payments,
+  sites,
   transactions,
   customerImpactSnapshots,
 } from "../db/schema.js";
@@ -29,7 +30,7 @@ import {
   publishMachineCommand,
 } from "../lib/domain.js";
 import { ADMIN_COOKIE_NAME, clearSessionCookie, fail, ok, setSessionCookie } from "../lib/http.js";
-import { jsonStringify } from "../lib/utils.js";
+import { jsonStringify, safeJsonParse } from "../lib/utils.js";
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -37,8 +38,25 @@ const loginSchema = z.object({
 });
 
 const machineActionSchema = z.object({
-  action: z.enum(["SET_MAINTENANCE", "RESUME_OPERATION", "CANCEL_ACTIVE_TRANSACTION", "SYNC_STATUS", "RESEND_LAST_COMMAND", "TOGGLE_QRIS_ACCEPTANCE"]),
+  action: z.enum(["SET_MAINTENANCE", "RESUME_OPERATION", "CANCEL_ACTIVE_TRANSACTION", "SYNC_STATUS", "RESEND_LAST_COMMAND", "TOGGLE_QRIS_ACCEPTANCE", "REFILL_TANK"]),
   payload: z.record(z.any()).optional(),
+});
+
+const FULL_TANK_LITERS = 19;
+
+const createMachineSchema = z.object({
+  machineCode: z.string().trim().min(3).max(32),
+  shortCode: z.string().trim().min(3).max(16),
+  displayName: z.string().trim().min(3).max(120),
+  siteName: z.string().trim().min(3).max(120),
+  siteAddress: z.string().trim().max(240).optional().default(""),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  imageUrl: z.string().url().optional().or(z.literal("")).default(""),
+  firmwareVersion: z.string().trim().max(60).optional().default("sim-1.0.0"),
+  initialTankLevelPct: z.number().int().min(0).max(100).optional().default(100),
+  price500ml: z.number().int().positive().optional().default(2000),
+  price1l: z.number().int().positive().optional().default(4000),
 });
 
 export async function registerAdminRoutes(app: FastifyInstance, services: AppServices) {
@@ -262,6 +280,107 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
     return ok(reply, await getMachineSummaryList(services));
   });
 
+  app.post("/api/admin/machines", async (request, reply) => {
+    const auth = await getAdminAuth(request, services);
+    if (!auth) return fail(reply, 401, "UNAUTHENTICATED", "Admin session not found");
+
+    const parsed = createMachineSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return fail(reply, 400, "BAD_REQUEST", "Invalid machine payload");
+
+    const input = parsed.data;
+    const db = services.dbClient.db as any;
+    const [existingMachine] = await db
+      .select()
+      .from(machines)
+      .where(eq(machines.machineCode, input.machineCode))
+      .limit(1);
+    if (existingMachine) return fail(reply, 409, "DUPLICATE_MACHINE", "Machine code already exists");
+
+    const [existingShortCode] = await db
+      .select()
+      .from(machines)
+      .where(eq(machines.shortCode, input.shortCode))
+      .limit(1);
+    if (existingShortCode) return fail(reply, 409, "DUPLICATE_SHORT_CODE", "Short code already exists");
+
+    const siteId = randomUUID();
+    const machineId = randomUUID();
+    const siteCode = `SITE-${input.machineCode}`.toUpperCase();
+
+    await db.insert(sites).values({
+      id: siteId,
+      code: siteCode,
+      name: input.siteName,
+      address: input.siteAddress || null,
+      latitude: input.latitude !== null && input.latitude !== undefined ? String(input.latitude) : null,
+      longitude: input.longitude !== null && input.longitude !== undefined ? String(input.longitude) : null,
+    });
+
+    const [machine] = await db
+      .insert(machines)
+      .values({
+        id: machineId,
+        machineCode: input.machineCode,
+        shortCode: input.shortCode,
+        siteId,
+        displayName: input.displayName,
+        imageUrl: input.imageUrl || null,
+        isVerified: false,
+        firmwareVersion: input.firmwareVersion || "sim-1.0.0",
+        connectivityStatus: "OFFLINE",
+        operationStatus: "IDLE",
+      })
+      .returning();
+
+    await db.insert(machineVolumeOptions).values([
+      {
+        id: randomUUID(),
+        machineId,
+        volumeMl: 500,
+        priceAmount: input.price500ml,
+        isActive: true,
+        sortOrder: 1,
+      },
+      {
+        id: randomUUID(),
+        machineId,
+        volumeMl: 1000,
+        priceAmount: input.price1l,
+        isActive: true,
+        sortOrder: 2,
+      },
+    ]);
+
+    await db.insert(machineStatusSnapshots).values({
+      id: randomUUID(),
+      machineId,
+      state: "IDLE",
+      tankLevelPct: input.initialTankLevelPct,
+      bottleDetected: false,
+      pumpRunning: false,
+      filledMl: 0,
+      flowRateLpm: "0.00",
+      source: "ADMIN_CREATE_MACHINE",
+    });
+
+    await db.insert(auditLogs).values({
+      id: randomUUID(),
+      adminUserId: auth.user.id,
+      action: "CREATE_MACHINE",
+      targetType: "machine",
+      targetId: machineId,
+      afterData: jsonStringify({
+        machineCode: input.machineCode,
+        shortCode: input.shortCode,
+        displayName: input.displayName,
+        siteName: input.siteName,
+        initialTankLevelPct: input.initialTankLevelPct,
+      }),
+    });
+
+    return ok(reply, { machine }, 201);
+  });
+
   app.get("/api/admin/machines/:machineId", async (request, reply) => {
     const auth = await getAdminAuth(request, services);
     if (!auth) return fail(reply, 401, "UNAUTHENTICATED", "Admin session not found");
@@ -309,6 +428,71 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
       .where(eq(machineEvents.machineId, machineId))
       .orderBy(desc(machineEvents.occurredAt))
       .limit(100);
+
+    return ok(reply, rows);
+  });
+
+  app.get("/api/admin/machines/:machineId/refill-logs", async (request, reply) => {
+    const auth = await getAdminAuth(request, services);
+    if (!auth) return fail(reply, 401, "UNAUTHENTICATED", "Admin session not found");
+
+    const { machineId } = request.params as { machineId: string };
+    const db = services.dbClient.db as any;
+    const [machine] = await db.select().from(machines).where(eq(machines.id, machineId)).limit(1);
+    if (!machine) return fail(reply, 404, "NOT_FOUND", "Machine not found");
+
+    const [eventRows, commandRows] = await Promise.all([
+      db
+        .select()
+        .from(machineEvents)
+        .where(eq(machineEvents.machineId, machineId))
+        .orderBy(desc(machineEvents.occurredAt))
+        .limit(100),
+      db
+        .select()
+        .from(deviceCommands)
+        .where(eq(deviceCommands.machineId, machineId))
+        .orderBy(desc(deviceCommands.issuedAt))
+        .limit(100),
+    ]);
+
+    const refillEvents = eventRows
+      .filter((row: any) => String(row.eventType).includes("REFILL"))
+      .map((row: any) => {
+        const payload = safeJsonParse<Record<string, unknown>>(row.payload, {});
+        return {
+          id: row.id,
+          occurredAt: row.occurredAt,
+          source: typeof payload.source === "string" ? payload.source : "DEVICE",
+          eventType: row.eventType,
+          tankLevelPct: typeof payload.tankLevelPct === "number"
+            ? payload.tankLevelPct
+            : typeof payload.tankLevelPercent === "number"
+              ? payload.tankLevelPercent
+              : null,
+          tankLiters: typeof payload.tankLiters === "number" ? payload.tankLiters : null,
+          refillId: typeof payload.refillId === "string" ? payload.refillId : null,
+        };
+      });
+
+    const refillCommands = commandRows
+      .filter((row: any) => row.commandType === "REFILL_TANK")
+      .map((row: any) => {
+        const payload = safeJsonParse<Record<string, unknown>>(row.payload, {});
+        return {
+          id: row.id,
+          occurredAt: row.issuedAt,
+          source: "ADMIN_DASHBOARD",
+          eventType: row.commandType,
+          tankLevelPct: typeof payload.tankLevelPercent === "number" ? payload.tankLevelPercent : 100,
+          tankLiters: typeof payload.tankLiters === "number" ? payload.tankLiters : FULL_TANK_LITERS,
+          refillId: typeof payload.refillId === "string" ? payload.refillId : null,
+        };
+      });
+
+    const rows = [...refillEvents, ...refillCommands]
+      .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
+      .slice(0, 50);
 
     return ok(reply, rows);
   });
@@ -362,6 +546,55 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
         adminUserId: auth.user.id,
         commandType: "SYNC_STATUS",
         payload: {},
+      });
+    }
+
+    if (parsed.data.action === "REFILL_TANK") {
+      const refillId = `ADMIN-REFILL-${Date.now()}`;
+      await db.insert(machineStatusSnapshots).values({
+        id: randomUUID(),
+        machineId: machine.id,
+        state: "REFILL_COMPLETE",
+        tankLevelPct: 100,
+        bottleDetected: false,
+        pumpRunning: false,
+        filledMl: 0,
+        flowRateLpm: "0.00",
+        source: "ADMIN_DASHBOARD",
+      });
+
+      await db.insert(machineEvents).values({
+        id: randomUUID(),
+        machineId: machine.id,
+        topic: `vending/${machine.machineCode}/event`,
+        eventType: "REFILL_TANK_ADMIN",
+        payload: jsonStringify({
+          refillId,
+          source: "ADMIN_DASHBOARD",
+          tankLiters: FULL_TANK_LITERS,
+          tankLevelPercent: 100,
+          tankLevelPct: 100,
+        }),
+      });
+
+      await db
+        .update(machines)
+        .set({
+          operationStatus: "IDLE",
+          updatedAt: new Date(),
+        })
+        .where(eq(machines.id, machine.id));
+
+      await publishMachineCommand(services, {
+        machineId: machine.id,
+        machineCode: machine.machineCode,
+        adminUserId: auth.user.id,
+        commandType: "REFILL_TANK",
+        payload: {
+          refillId,
+          tankLiters: FULL_TANK_LITERS,
+          tankLevelPercent: 100,
+        },
       });
     }
 

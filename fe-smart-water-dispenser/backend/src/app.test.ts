@@ -259,6 +259,162 @@ describe("backend service", () => {
     expect(stationDetail.status.source).toBe("LOCAL_REFILL");
   });
 
+  it("keeps the last tank level when a device event omits tank telemetry", async () => {
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/status",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        state: "IDLE",
+        tankLevelPercent: 76,
+        pumpRunning: false,
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    await handleInboundMqttMessage(services, {
+      topic: "vending/VM-002/event",
+      payload: JSON.stringify({
+        machineId: "VM-002",
+        event: "DEVICE_ONLINE",
+        state: "IDLE",
+      }),
+      qos: 1,
+      retain: false,
+    });
+
+    const stationsResponse = await app.inject({
+      method: "GET",
+      url: "/api/stations",
+    });
+
+    expect(stationsResponse.statusCode).toBe(200);
+    const station = stationsResponse.json().data.find((row: { machineCode: string }) => row.machineCode === "VM-002");
+    expect(station.capacity).toBe(76);
+  });
+
+  it("lets admin refill a machine to one 19L gallon and publishes REFILL_TANK", async () => {
+    const adminLogin = await app.inject({
+      method: "POST",
+      url: "/api/admin/auth/login",
+      payload: {
+        email: "admin@ecoflow.local",
+        password: "admin12345",
+      },
+    });
+    expect(adminLogin.statusCode).toBe(200);
+    const adminCookie = extractCookie(adminLogin.headers["set-cookie"], "ecoflow_admin_session");
+
+    const stationsBeforeResponse = await app.inject({
+      method: "GET",
+      url: "/api/stations",
+    });
+    expect(stationsBeforeResponse.statusCode).toBe(200);
+    const station = stationsBeforeResponse.json().data.find((row: { machineCode: string }) => row.machineCode === "VM-002");
+    expect(station).toBeTruthy();
+
+    const actionResponse = await app.inject({
+      method: "POST",
+      url: `/api/admin/machines/${station.id}/actions`,
+      headers: {
+        cookie: adminCookie ?? "",
+      },
+      payload: {
+        action: "REFILL_TANK",
+      },
+    });
+    expect(actionResponse.statusCode).toBe(200);
+
+    const stationDetailResponse = await app.inject({
+      method: "GET",
+      url: `/api/stations/${station.id}`,
+    });
+    expect(stationDetailResponse.statusCode).toBe(200);
+    const stationDetail = stationDetailResponse.json().data;
+    expect(stationDetail.status.tankLevelPct).toBe(100);
+    expect(stationDetail.status.state).toBe("REFILL_COMPLETE");
+    expect(stationDetail.status.source).toBe("ADMIN_DASHBOARD");
+
+    const publishedCommands = (services.mqtt as any).published as Array<{
+      machineCode: string;
+      topic: string;
+      payload: Record<string, unknown>;
+    }>;
+    const refillCommand = [...publishedCommands]
+      .reverse()
+      .find((entry) => entry.machineCode === "VM-002" && entry.payload.command === "REFILL_TANK");
+
+    expect(refillCommand).toBeTruthy();
+    expect(refillCommand?.topic).toBe("vending/VM-002/command");
+    expect(refillCommand?.payload).toMatchObject({
+      command: "REFILL_TANK",
+      tankLiters: 19,
+      tankLevelPercent: 100,
+    });
+
+    const refillLogsResponse = await app.inject({
+      method: "GET",
+      url: `/api/admin/machines/${station.id}/refill-logs`,
+      headers: {
+        cookie: adminCookie ?? "",
+      },
+    });
+    expect(refillLogsResponse.statusCode).toBe(200);
+    const refillLogs = refillLogsResponse.json().data;
+    expect(refillLogs.length).toBeGreaterThan(0);
+    expect(refillLogs[0].eventType).toBe("REFILL_TANK");
+    expect(refillLogs[0].tankLiters).toBe(19);
+  });
+
+  it("allows admin to create a new machine with default volume options and initial tank status", async () => {
+    const adminLogin = await app.inject({
+      method: "POST",
+      url: "/api/admin/auth/login",
+      payload: {
+        email: "admin@ecoflow.local",
+        password: "admin12345",
+      },
+    });
+    expect(adminLogin.statusCode).toBe(200);
+    const adminCookie = extractCookie(adminLogin.headers["set-cookie"], "ecoflow_admin_session");
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/admin/machines",
+      headers: {
+        cookie: adminCookie ?? "",
+      },
+      payload: {
+        machineCode: "VM-099",
+        shortCode: "990099",
+        displayName: "TEST MACHINE",
+        siteName: "TEST SITE",
+        siteAddress: "Test Address",
+        latitude: -6.3,
+        longitude: 106.64,
+        initialTankLevelPct: 88,
+        price500ml: 2500,
+        price1l: 4500,
+      },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    const created = createResponse.json().data.machine;
+    expect(created.machineCode).toBe("VM-099");
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/api/admin/machines/${created.id}`,
+      headers: {
+        cookie: adminCookie ?? "",
+      },
+    });
+    expect(detailResponse.statusCode).toBe(200);
+    const detail = detailResponse.json().data;
+    expect(detail.latestStatus.tankLevelPct).toBe(88);
+    expect(detail.volumeOptions.map((option: { volumeMl: number }) => option.volumeMl).sort((a: number, b: number) => a - b)).toEqual([500, 1000]);
+  });
+
   it("creates a QRIS transaction from WAIT_PAYMENT telemetry and exposes it to the tablet view", async () => {
     await handleInboundMqttMessage(services, {
       topic: "vending/VM-002/status",

@@ -16,6 +16,17 @@ function mapCapacityToStatus(capacityPct: number) {
   return "available";
 }
 
+function applyTankFallback<T extends MachineStatusRow | undefined>(latestStatus: T, statusRows: MachineStatusRow[]) {
+  if (!latestStatus || latestStatus.tankLevelPct !== null) return latestStatus;
+  const latestTankStatus = statusRows.find((row) => row.tankLevelPct !== null);
+  return latestTankStatus
+    ? {
+        ...latestStatus,
+        tankLevelPct: latestTankStatus.tankLevelPct,
+      }
+    : latestStatus;
+}
+
 export async function registerStationRoutes(app: FastifyInstance, services: AppServices) {
   app.get("/api/stations", async (request, reply) => {
     const db = services.dbClient.db as any;
@@ -35,9 +46,13 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
     
     // Only keep the latest status per machine
     const latestStatusMap = new Map<string, MachineStatusRow>();
+    const latestTankLevelMap = new Map<string, number>();
     for (const row of allStatusRows as MachineStatusRow[]) {
       if (!latestStatusMap.has(row.machineId)) {
         latestStatusMap.set(row.machineId, row);
+      }
+      if (!latestTankLevelMap.has(row.machineId) && row.tankLevelPct !== null) {
+        latestTankLevelMap.set(row.machineId, row.tankLevelPct);
       }
     }
 
@@ -51,7 +66,7 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
           site?.latitude ? Number(site.latitude) : null,
           site?.longitude ? Number(site.longitude) : null,
         );
-        const capacityPct = latestStatus?.tankLevelPct ?? 0;
+        const capacityPct = latestStatus?.tankLevelPct ?? latestTankLevelMap.get(machine.id) ?? 0;
         return {
           id: machine.id,
           machineCode: machine.machineCode,
@@ -95,12 +110,13 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
     }
 
     const [site] = await db.select().from(sites).where(eq(sites.id, machine.siteId)).limit(1);
-    const [status] = await db
+    const statusRows = await db
       .select()
       .from(machineStatusSnapshots)
       .where(eq(machineStatusSnapshots.machineId, machine.id))
       .orderBy(desc(machineStatusSnapshots.reportedAt))
-      .limit(1);
+      .limit(20);
+    const status = applyTankFallback(statusRows[0], statusRows);
     const volumeOptions = await db
       .select()
       .from(machineVolumeOptions)
@@ -131,12 +147,13 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
       return fail(reply, 404, "NOT_FOUND", "Machine code not found");
     }
 
-    const [status] = await db
+    const statusRows = await db
       .select()
       .from(machineStatusSnapshots)
       .where(eq(machineStatusSnapshots.machineId, machine.id))
       .orderBy(desc(machineStatusSnapshots.reportedAt))
-      .limit(1);
+      .limit(20);
+    const status = applyTankFallback(statusRows[0], statusRows);
 
     return ok(reply, {
       machine: {
