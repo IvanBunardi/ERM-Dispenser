@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
   Droplets,
@@ -10,6 +11,7 @@ import {
   Loader2,
   QrCode,
   Circle,
+  User,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import Image from 'next/image';
@@ -265,6 +267,7 @@ function ScanResultContent() {
   const [machineBusyState, setMachineBusyState] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const machineWatchRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const successRedirectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncTransactionSnapshot = useEffectEvent(async (txId: string) => {
     const res = await api.get<TransactionSnapshot>(`/api/customer/transactions/${txId}`);
@@ -276,13 +279,6 @@ function ScanResultContent() {
     if (tx.dispenseStatus === 'COMPLETED') {
       if (pollRef.current) clearInterval(pollRef.current);
       setPageState('success');
-      if (isTabletMode) {
-        setTimeout(() => {
-          resetToMachineReadyState();
-        }, 5000);
-      } else {
-        setTimeout(() => router.push('/explore'), 3000);
-      }
       return;
     }
 
@@ -412,8 +408,22 @@ function ScanResultContent() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       if (machineWatchRef.current) clearInterval(machineWatchRef.current);
+      if (successRedirectRef.current) clearTimeout(successRedirectRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (pageState !== 'success') return;
+
+    if (successRedirectRef.current) clearTimeout(successRedirectRef.current);
+    successRedirectRef.current = setTimeout(() => {
+      router.push('/profile');
+    }, 6500);
+
+    return () => {
+      if (successRedirectRef.current) clearTimeout(successRedirectRef.current);
+    };
+  }, [pageState, router]);
 
   useEffect(() => {
     const handleVisibilityRefresh = () => {
@@ -546,9 +556,72 @@ function ScanResultContent() {
     );
   }
 
-  if (pageState === 'processing' || pageState === 'success') {
+  if (pageState === 'success') {
     const snapshot = liveSnapshot;
-    const stage = pageState === 'success' ? 'COMPLETED' : getDeviceStage(snapshot);
+    const targetMl = snapshot?.transaction.volumeMl ?? volumeOptions[selectedIdx]?.volumeMl ?? 0;
+    const filledMl = snapshot?.dispenseSession?.actualFilledMl ?? targetMl;
+    const priceAmount = snapshot?.transaction.grossAmount ?? volumeOptions[selectedIdx]?.priceAmount ?? 0;
+    const flowRate = getFlowRate(snapshot);
+
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,_#dff7ff_0%,_#eff6ff_38%,_#f8fafc_72%)] px-5 py-8">
+        <MagicUiFireworks />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[linear-gradient(180deg,rgba(59,130,246,0.18),transparent)]" />
+        <div className="relative z-10 mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center">
+          <section className="relative overflow-hidden rounded-[32px] border border-white/70 bg-white/88 p-6 text-center shadow-[0_24px_80px_rgba(30,64,175,0.18)] backdrop-blur">
+            <div className="absolute -right-12 -top-12 h-32 w-32 rounded-full bg-cyan-200/40 blur-2xl" />
+            <div className="absolute -left-16 bottom-10 h-40 w-40 rounded-full bg-blue-200/35 blur-3xl" />
+
+            <div className="relative mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-full bg-[linear-gradient(135deg,#1d4ed8,#06b6d4)] shadow-[0_16px_40px_rgba(37,99,235,0.35)]">
+              <div className="absolute inset-2 rounded-full border border-white/35" />
+              <CheckCircle size={46} className="text-white" />
+            </div>
+
+            <p className="text-[11px] font-black uppercase tracking-[0.28em] text-cyan-600">Refill Complete</p>
+            <h1 className="mt-2 text-3xl font-black leading-tight text-slate-950">
+              Air berhasil terisi
+            </h1>
+            <p className="mx-auto mt-3 max-w-xs text-sm leading-relaxed text-slate-500">
+              Botolmu sudah siap. Riwayat transaksi dan dampak penghematan akan tersimpan di profil.
+            </p>
+
+            <div className="mt-6 rounded-[26px] bg-slate-50 p-4">
+              <BottleFillVisual fillPercent={100} isActive={false} />
+              <div className="mt-4 grid grid-cols-3 gap-2.5 text-center">
+                <MetricCard label="Target" value={`${targetMl} ml`} />
+                <MetricCard label="Terisi" value={`${filledMl} ml`} />
+                <MetricCard label="Flow" value={flowRate > 0 ? `${flowRate.toFixed(1)} L/m` : '--'} />
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 text-left">
+              <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Station</p>
+                <p className="mt-1 truncate text-sm font-bold text-slate-800">{machine?.displayName ?? code}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-100 bg-white px-4 py-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Total</p>
+                <p className="mt-1 text-sm font-bold text-slate-800">IDR {priceAmount.toLocaleString('id-ID')}</p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => router.push('/profile')}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary-800 py-4 text-sm font-bold text-white shadow-[0_16px_36px_rgba(27,58,138,0.28)] transition-colors hover:bg-primary-700"
+            >
+              <User size={18} />
+              Lihat Profile
+            </button>
+            <p className="mt-3 text-xs font-medium text-slate-400">Otomatis menuju profile dalam beberapa detik</p>
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  if (pageState === 'processing') {
+    const snapshot = liveSnapshot;
+    const stage = getDeviceStage(snapshot);
     const copy = getStageCopy(stage);
     const showBottleFill = stage !== 'WAITING_PAYMENT';
     const targetMl = snapshot?.transaction.volumeMl ?? volumeOptions[selectedIdx]?.volumeMl ?? 0;
@@ -563,7 +636,7 @@ function ScanResultContent() {
     return (
       <div className="bg-[radial-gradient(circle_at_top,_#e0f2fe,_#f8fafc_45%,_#eef2ff)]">
         <div className="bg-white/85 backdrop-blur px-4 py-4 flex items-center gap-3 border-b border-white/60">
-          {!isTabletMode && pageState !== 'success' && (
+          {!isTabletMode && (
             <button onClick={() => router.back()} className="p-2 rounded-full hover:bg-slate-100 transition-colors">
               <ArrowLeft size={20} className="text-slate-600" />
             </button>
@@ -970,6 +1043,47 @@ function BottleFillVisual({ fillPercent, isActive }: { fillPercent: number; isAc
       </div>
     </div>
   );
+}
+
+function MagicUiFireworks() {
+  useEffect(() => {
+    const duration = 5 * 1000;
+    const animationEnd = Date.now() + duration;
+    const defaults = {
+      startVelocity: 30,
+      spread: 360,
+      ticks: 60,
+      zIndex: 20,
+      colors: ['#38bdf8', '#2563eb', '#22c55e', '#f97316', '#ffffff'],
+      disableForReducedMotion: true,
+    };
+    const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+    const interval = window.setInterval(() => {
+      const timeLeft = animationEnd - Date.now();
+
+      if (timeLeft <= 0) {
+        window.clearInterval(interval);
+        return;
+      }
+
+      const particleCount = 50 * (timeLeft / duration);
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 },
+      });
+      confetti({
+        ...defaults,
+        particleCount,
+        origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 },
+      });
+    }, 250);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  return <div className="pointer-events-none fixed inset-0 z-20" aria-hidden="true" />;
 }
 
 export default function ScanResultPage() {
