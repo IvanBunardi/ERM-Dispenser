@@ -38,17 +38,7 @@ body {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-@keyframes scanLine {
-  0% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(240px); opacity: 0.5; }
-}
-.scan-line { animation: scanLine 2s ease-in-out infinite alternate; }
 
-@keyframes bracketPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-.bracket-pulse { animation: bracketPulse 2s ease-in-out infinite; }
 
 @keyframes shimmer {
   0% { background-position: -468px 0; }

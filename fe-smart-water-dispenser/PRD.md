@@ -24,7 +24,7 @@ Eco-Flow adalah aplikasi web customer-facing untuk sistem smart water dispenser.
 | Zero-friction onboarding — langsung pakai tanpa daftar | Pengguna bisa transaksi dalam < 30 detik sejak buka app |
 | Memudahkan pengguna menemukan stasiun pengisian air | User dapat menemukan stasiun dalam < 3 klik |
 | Mendorong gaya hidup ramah lingkungan | Tampilkan gamifikasi & statistik impact |
-| Menyederhanakan proses refill via QR | Waktu scan-to-dispense < 10 detik |
+| Menyederhanakan proses refill via Kode Mesin | Waktu input-to-dispense < 15 detik |
 | Memberikan transparansi konsumsi & pengeluaran | Riwayat lengkap di halaman Profile |
 
 ---
@@ -253,8 +253,8 @@ Extrabold:  800  /* Hanya untuk angka statistik besar */
 /splash              → Splash screen + inisialisasi guest session
 /explore             → Peta & daftar stasiun (halaman utama)
 /explore/[stationId] → Detail stasiun
-/scan                → QR Code scanner
-/scan/result         → Hasil scan & konfirmasi dispense
+/scan                → Machine code input page
+/scan/result         → Machine identification & refill confirmation
 /stats               → Statistik dampak lingkungan & leaderboard
 /profile             → Profil pengguna & riwayat refill
 /profile/history     → Riwayat lengkap refill
@@ -403,29 +403,6 @@ Extrabold:  800  /* Hanya untuk angka statistik besar */
 
 ---
 
-### 9.3 Halaman Scan (`/scan`)
-
-**Tujuan:** Scan QR Code pada dispenser untuk memulai pengisian
-
-#### Mobile Layout
-- Background penuh biru primer `#1B3A8A`
-- Judul "Scan QR Code" — Inter SemiBold 18px, putih, center
-- Area scanner: kotak dengan animated corner brackets (bukan solid border)
-- Scanning line: bergerak atas-bawah, looping, semi-transparan putih
-- Instruksi: "Align the QR code within the frame to scan" — putih 70% opacity
-- 2 tombol aksi (lingkaran putih, ikon biru):
-  - **Flash** (Lucide `Flashlight`) — toggle lampu flash kamera
-  - **Gallery** (Lucide `Image`) — unggah dari galeri untuk scan dari foto
-- Bottom Navigation (background transparan gelap)
-
-#### Desktop Layout
-- Karena webcam mungkin tidak tersedia, tampilkan dua opsi tab:
-  - **Tab 1: Scan via Webcam** — akses kamera menggunakan `getUserMedia` API
-  - **Tab 2: Enter Code** — input teks manual 6–8 digit kode stasiun
-- Input manual: monospace font, auto-uppercase, max 8 karakter
-- Tombol "Verify" (biru, full-width card)
-- Background biru konsisten dengan mobile
-
 #### Animasi
 - Scanning line: `translateY` CSS animation loop 2s ease-in-out
 - Corner brackets: pulse opacity 2s loop
@@ -440,7 +417,7 @@ Extrabold:  800  /* Hanya untuk angka statistik besar */
 
 #### Komponen
 - Header: tombol back Lucide `ArrowLeft` + judul "Confirm Refill"
-- **Stasiun teridentifikasi:** foto, nama, kapasitas saat ini
+- **Stasiun teridentifikasi:** nama stasiun, status, & kapasitas saat ini
 - **Pilihan Volume** (card grid 2×2 + 1 custom):
   - 250ml | 500ml | 750ml | 1000ml | Custom
   - Selected state: border biru 2px + background `#EFF6FF`
