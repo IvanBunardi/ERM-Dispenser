@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 const FAQS = [
   { q: 'What is a Guest ID?', a: 'Your Guest ID is a unique 6-character code that identifies your session. It is automatically created when you first open Eco-Flow. No registration needed!' },
   { q: 'How do I keep my history?', a: "Your history is stored in your browser's cookies. Don't clear your cookies or browse in private/incognito mode to keep your data." },
-  { q: 'How do I refill water?', a: 'Find a nearby station on the Explore page, then tap Scan on the bottom bar and align the QR code on the dispenser within the frame.' },
+  { q: 'How do I refill water?', a: 'Find a nearby station on the Explore page, then tap Machine on the bottom bar and enter the machine code printed on the dispenser.' },
   { q: 'How is the price calculated?', a: 'Prices are based on volume: 250ml = IDR 1,000, 500ml = IDR 1,500, 750ml = IDR 2,000, 1L = IDR 2,500. Payment is processed after dispensing.' },
   { q: 'What eco levels are available?', a: 'There are 5 levels: Seedling (0–49 bottles), Sprout (50–149), Sapling (150–299), Tree (300–599), and Emerald (600+).' },
 ];

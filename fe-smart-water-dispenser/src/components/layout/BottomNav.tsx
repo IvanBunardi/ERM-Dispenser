@@ -1,12 +1,12 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Compass, QrCode, BarChart2, User } from 'lucide-react';
+import { Compass, Cpu, BarChart2, User } from 'lucide-react';
 import { Suspense } from 'react';
 
 const tabs = [
   { href: '/explore', label: 'Explore', icon: Compass },
-  { href: '/scan', label: 'Scan', icon: QrCode },
+  { href: '/scan', label: 'Machine', icon: Cpu },
   { href: '/stats', label: 'Stats', icon: BarChart2 },
   { href: '/profile', label: 'Profile', icon: User },
 ];

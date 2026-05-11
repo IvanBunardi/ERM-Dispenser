@@ -30,7 +30,7 @@ export default function AboutPage() {
           <div>
             <h3 className="text-sm font-semibold text-slate-700 mb-1">How It Works</h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              No registration needed. Open the app, find a nearby station, scan the QR code on the dispenser, choose your volume, and start dispensing.
+              No registration needed. Open the app, find a nearby station, enter the dispenser machine code, choose your volume, and start dispensing.
             </p>
           </div>
           <div>

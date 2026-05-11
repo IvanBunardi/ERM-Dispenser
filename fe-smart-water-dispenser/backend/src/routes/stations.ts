@@ -135,7 +135,7 @@ export async function registerStationRoutes(app: FastifyInstance, services: AppS
     const body = request.body as { code?: string };
     const code = body?.code?.trim().toUpperCase();
     if (!code) {
-      return fail(reply, 400, "BAD_REQUEST", "QR code is required");
+      return fail(reply, 400, "BAD_REQUEST", "Machine code is required");
     }
 
     const [machine] = await db

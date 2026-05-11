@@ -325,7 +325,7 @@ function ScanResultContent() {
 
   useEffect(() => {
     if (!code) {
-      setErrorMsg('No QR code provided');
+      setErrorMsg('No machine code provided');
       setPageState('error');
       return;
     }
