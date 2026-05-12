@@ -8,7 +8,7 @@ const envSchema = z.object({
   BACKEND_PORT: z.coerce.number().int().positive().default(4000),
   FRONTEND_ORIGIN: z.string().default("http://localhost:3000"),
   SESSION_SECRET: z.string().min(16).default("change-me-with-a-long-random-secret"),
-  ADMIN_EMAIL: z.string().email().default("admin@ecoflow.local"),
+  ADMIN_EMAIL: z.string().email().default("admin@prasmul.ac.id"),
   ADMIN_PASSWORD: z.string().min(8).default("admin12345"),
   DATABASE_URL: z.string().default("pglite://memory"),
   MIDTRANS_MODE: z.enum(["mock", "live"]).default("mock"),

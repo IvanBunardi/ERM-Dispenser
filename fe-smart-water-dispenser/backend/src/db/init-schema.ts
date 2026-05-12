@@ -185,6 +185,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
   id uuid PRIMARY KEY,
   email text NOT NULL UNIQUE,
   full_name text NOT NULL,
+  institution_name text,
+  phone_number text,
   password_hash text NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now()

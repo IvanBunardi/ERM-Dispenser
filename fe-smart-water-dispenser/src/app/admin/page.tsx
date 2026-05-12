@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { api, ApiError } from '@/lib/api'
+import Link from 'next/link'
 import './admin.css'
 
 // ── Types ──
@@ -104,7 +105,7 @@ function LoginForm({ onLogin }: { onLogin: (admin: AdminUser) => void }) {
       </div>
       <form onSubmit={handleSubmit} style={{ position: 'relative', zIndex: 1, background: 'white', borderRadius: 20, padding: 36, width: '100%', maxWidth: 380, boxShadow: '0 8px 40px rgba(0,0,0,0.12)' }}>
         <h2 style={{ fontFamily: 'Montserrat', fontWeight: 800, fontSize: 22, color: '#1B3A8A', marginBottom: 4 }}>Admin Login</h2>
-        <p style={{ fontFamily: 'Montserrat', fontSize: 13, color: '#64748b', marginBottom: 24 }}>Eco-Flow Smart Dispenser</p>
+        <p style={{ fontFamily: 'Montserrat', fontSize: 13, color: '#64748b', marginBottom: 24 }}>Prasetiya Mulya Hydration System</p>
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Email</label>
           <input value={email} onChange={e => setEmail(e.target.value)} type="email" required
@@ -120,6 +121,9 @@ function LoginForm({ onLogin }: { onLogin: (admin: AdminUser) => void }) {
           style={{ width: '100%', background: '#1B3A8A', color: 'white', border: 'none', borderRadius: 10, padding: '12px 0', fontSize: 15, fontWeight: 700, fontFamily: 'Montserrat', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Logging in...' : 'Login'}
         </button>
+        <p style={{ marginTop: 20, textAlign: 'center', fontFamily: 'Montserrat', fontSize: 12, color: '#64748b' }}>
+          Penyedia mesin baru? <Link href="/admin/register" style={{ color: '#1B3A8A', fontWeight: 700, textDecoration: 'none' }}>Daftar di sini</Link>
+        </p>
       </form>
     </div>
   )
@@ -334,8 +338,8 @@ export default function AdminDashboard() {
       <div className="dashboard-container">
         {/* Header */}
         <div className="header">
-          <div className="header-subtitle">Smart Hydration – Sustainable Future</div>
-          <h1 className="header-title">Eco-Flow Smart Dispenser</h1>
+          <div className="header-subtitle">Smart Hydration – Universitas Prasetiya Mulya</div>
+          <h1 className="header-title">Eco-Flow x Prasmul</h1>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
             <span style={{ fontFamily: 'Montserrat', fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
               Logged in as <strong>{admin.email}</strong>

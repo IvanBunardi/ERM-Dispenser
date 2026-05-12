@@ -203,11 +203,12 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
     },
   ]);
 
-  const [ownerRole, opsRole] = await db
+  const [ownerRole, opsRole, providerRole] = await db
     .insert(adminRoles)
     .values([
       { id: randomUUID(), roleKey: "owner", roleName: "Owner" },
       { id: randomUUID(), roleKey: "ops_admin", roleName: "Operations Admin" },
+      { id: randomUUID(), roleKey: "machine_provider", roleName: "Machine Provider" },
     ])
     .returning();
 
@@ -217,7 +218,8 @@ export async function seedDatabase(dbClient: DatabaseClient, config: AppConfig) 
     .values({
       id: randomUUID(),
       email: config.ADMIN_EMAIL,
-      fullName: "Eco Flow Admin",
+      fullName: "Universitas Prasetiya Mulya",
+      institutionName: "Prasetiya Mulya",
       passwordHash,
       isActive: true,
     })

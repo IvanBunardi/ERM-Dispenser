@@ -220,6 +220,8 @@ export const adminUsers = pgTable("admin_users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
   fullName: text("full_name").notNull(),
+  institutionName: text("institution_name"),
+  phoneNumber: text("phone_number"),
   passwordHash: text("password_hash").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

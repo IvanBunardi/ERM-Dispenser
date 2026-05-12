@@ -6,6 +6,8 @@ import { z } from "zod";
 import type { AppServices } from "../types.js";
 import {
   adminUsers,
+  adminRoles,
+  adminUserRoles,
   alerts,
   auditLogs,
   deviceCommands,
@@ -57,6 +59,14 @@ const createMachineSchema = z.object({
   initialTankLevelPct: z.number().int().min(0).max(100).optional().default(100),
   price500ml: z.number().int().positive().optional().default(2000),
   price1l: z.number().int().positive().optional().default(4000),
+});
+
+const registerProviderSchema = z.object({
+  fullName: z.string().trim().min(3).max(120),
+  email: z.string().email(),
+  password: z.string().min(8),
+  institutionName: z.string().trim().min(3).max(120),
+  phoneNumber: z.string().trim().min(10).max(20),
 });
 
 export async function registerAdminRoutes(app: FastifyInstance, services: AppServices) {
@@ -150,6 +160,74 @@ export async function registerAdminRoutes(app: FastifyInstance, services: AppSer
         fullName: admin.fullName,
       },
     });
+  });
+
+  app.post("/api/admin/auth/register-provider", async (request, reply) => {
+    const parsed = registerProviderSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return fail(reply, 400, "BAD_REQUEST", "Invalid registration payload");
+    }
+
+    const { fullName, email, password, institutionName, phoneNumber } = parsed.data;
+    const db = services.dbClient.db as any;
+
+    // Check if user already exists
+    const [existing] = await db.select().from(adminUsers).where(eq(adminUsers.email, email)).limit(1);
+    if (existing) {
+      return fail(reply, 409, "DUPLICATE_EMAIL", "Email already registered");
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const userId = randomUUID();
+
+    const [admin] = await db
+      .insert(adminUsers)
+      .values({
+        id: userId,
+        email,
+        fullName,
+        institutionName,
+        phoneNumber,
+        passwordHash,
+        isActive: true,
+      })
+      .returning();
+
+    // Assign machine_provider role
+    const [providerRole] = await db
+      .select()
+      .from(adminRoles)
+      .where(eq(adminRoles.roleKey, "machine_provider"))
+      .limit(1);
+
+    if (providerRole) {
+      await db.insert(adminUserRoles).values({
+        id: randomUUID(),
+        adminUserId: userId,
+        adminRoleId: providerRole.id,
+      });
+    }
+
+    const token = await services.session.sign(
+      {
+        sub: admin.id,
+        kind: "admin",
+        sid: `admin-${admin.id}`,
+        role: "machine_provider",
+      },
+      "7d",
+    );
+
+    setSessionCookie(reply, ADMIN_COOKIE_NAME, token, 7 * 24 * 60 * 60);
+
+    return ok(reply, {
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        fullName: admin.fullName,
+        institutionName: admin.institutionName,
+      },
+    }, 201);
   });
 
   app.post("/api/admin/auth/logout", async (_request, reply) => {

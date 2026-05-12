@@ -81,3 +81,9 @@ backend/node_modules/
 backend/.env
 *.sqlite
 *.sqlite3
+
+# Claude
+.claude/
+.claude-flow/
+CLAUDE.md
+AGENTS.md
