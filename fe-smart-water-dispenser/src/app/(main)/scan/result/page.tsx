@@ -254,7 +254,7 @@ function ScanResultContent() {
   const params = useSearchParams();
   const code = params.get('code') ?? '';
   const mode = params.get('mode');
-  const isTabletMode = mode === 'tablet';
+  const isTabletMode = false;
 
   const [pageState, setPageState] = useState<PageState>('verifying');
   const [errorMsg, setErrorMsg] = useState('');
@@ -774,11 +774,7 @@ function ScanResultContent() {
                   // ignore cancel error
                 }
               }
-              if (isTabletMode) {
-                resetToMachineReadyState();
-              } else {
-                router.back();
-              }
+              router.back();
             }}
             className="w-full border-2 border-slate-200 text-slate-600 font-semibold py-3 rounded-2xl text-sm bg-white/80"
           >
@@ -792,91 +788,7 @@ function ScanResultContent() {
 
   const vol = volumeOptions[selectedIdx];
 
-  if (isTabletMode) {
-    return (
-      <div className="bg-slate-50 min-h-screen">
-        <div className="bg-white px-4 py-4 flex items-center gap-3 border-b border-slate-100">
-          <h1 className="text-base font-semibold text-slate-800">Tablet Payment Screen</h1>
-        </div>
 
-        <div className="max-w-md mx-auto px-4 py-6 space-y-6">
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-primary-50 flex items-center justify-center">
-                <Droplets size={24} className="text-primary-600" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Station</p>
-                <h3 className="font-bold text-slate-800">{machine?.displayName ?? code}</h3>
-                <p className="text-xs text-slate-400 font-mono">{machine?.machineCode}</p>
-              </div>
-              <div className="ml-auto">
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${machine?.status === 'available' ? 'bg-eco-500' : 'bg-amber-400'}`} />
-                  <span className="text-xs font-medium text-slate-600 capitalize">{machine?.status ?? 'Unknown'}</span>
-                </div>
-                <p className="text-xs text-slate-400 text-right mt-0.5">{machine?.capacityPct ?? 0}% Fill</p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">Select Volume</h3>
-            {volumeOptions.length === 0 ? (
-              <div className="text-center py-6 text-slate-400 text-sm">No volume options available</div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {volumeOptions.map((v, i) => (
-                  <button
-                    key={v.id}
-                    onClick={() => setSelectedIdx(i)}
-                    className={`p-4 rounded-2xl border-2 text-left transition-all duration-200 ${
-                      selectedIdx === i
-                        ? 'border-primary-600 bg-primary-50'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <p className={`text-lg font-bold ${selectedIdx === i ? 'text-primary-800' : 'text-slate-700'}`}>
-                      {v.volumeMl}ml
-                    </p>
-                    <p className={`text-xs mt-0.5 ${selectedIdx === i ? 'text-primary-600' : 'text-slate-400'}`}>
-                      IDR {v.priceAmount.toLocaleString('id-ID')}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {vol && (
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Volume</span>
-                <span className="font-semibold text-slate-800">{vol.volumeMl}ml</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Price</span>
-                <span className="font-semibold text-slate-800">IDR {vol.priceAmount.toLocaleString('id-ID')}</span>
-              </div>
-              <div className="border-t border-slate-100 pt-3 flex justify-between text-sm">
-                <span className="text-slate-400 text-xs">Tablet QRIS</span>
-                <span className="text-xs text-slate-400">Sinkron dengan mesin</span>
-              </div>
-            </div>
-          )}
-
-          <button
-            onClick={handleStart}
-            disabled={volumeOptions.length === 0 || !vol}
-            className="w-full bg-primary-800 text-white font-semibold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-primary-700 transition-colors disabled:opacity-40"
-          >
-            <Droplets size={18} />
-            Start Tablet Payment
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-slate-50">

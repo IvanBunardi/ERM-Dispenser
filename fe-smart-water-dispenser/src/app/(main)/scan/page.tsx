@@ -43,7 +43,7 @@ export default function ScanPage() {
 
     if (!selectedMachine) return;
 
-    router.push(`/scan/result?code=${encodeURIComponent(selectedMachine.machineCode)}&mode=tablet`);
+    router.push(`/scan/result?code=${encodeURIComponent(selectedMachine.machineCode)}`);
   };
 
   return (
