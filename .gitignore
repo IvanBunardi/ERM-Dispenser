@@ -1,0 +1,11 @@
+# Claude
+.claude/
+.claude-flow/
+CLAUDE.md
+AGENTS.md
+
+# Packages
+node_modules/
+
+# OS
+.DS_Store
